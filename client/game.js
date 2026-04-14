@@ -22,6 +22,9 @@ const state = {
   // Remote cursors: socketId → DOM element
   remoteCursors: new Map(),
 
+  // Active category filter
+  activeCategory: '',
+
   // Drag state
   drag: null,
 
@@ -51,6 +54,7 @@ const membersList     = $('members-list');
 const discoveryCount  = $('discovery-count');
 const sidebarSearch   = $('sidebar-search');
 const sidebarEl       = $('sidebar-elements');
+const categoryTabs    = $('category-tabs');
 const canvas          = $('canvas');
 const canvasWrap      = $('canvas-wrap');
 const toast           = $('discovery-toast');
@@ -102,8 +106,8 @@ function connect() {
   sock.on('combine:success', ({ consumed, result }) => {
     for (const id of consumed) removeCanvasItem(id);
     addCanvasItem(result.instance, true);
-    // Update def in case it's new
     if (result.def) state.allElements[result.def.id] = result.def;
+    spawnParticles(result.instance.x, result.instance.y, result.def?.tier);
   });
 
   sock.on('discovery:new', ({ elementDef }) => {
@@ -164,12 +168,12 @@ function onRoomState(snap) {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function addSidebarCard(def) {
-  // Avoid duplicates
   if (document.querySelector(`.sidebar-card[data-id="${def.id}"]`)) return;
 
   const card = document.createElement('div');
   card.className = 'element-card sidebar-card';
   card.dataset.id = def.id;
+  card.dataset.cat = def.category || '';
   card.innerHTML = `
     ${def.icon || ''}
     <span class="card-name">${def.name}</span>
@@ -181,13 +185,25 @@ function addSidebarCard(def) {
 
 function filterSidebar(query) {
   const q = query.toLowerCase();
+  const cat = state.activeCategory;
   for (const card of sidebarEl.querySelectorAll('.sidebar-card')) {
     const name = card.querySelector('.card-name').textContent.toLowerCase();
-    card.style.display = (!q || name.includes(q)) ? '' : 'none';
+    const matchQ = !q || name.includes(q);
+    const matchCat = !cat || card.dataset.cat === cat;
+    card.style.display = (matchQ && matchCat) ? '' : 'none';
   }
 }
 
 sidebarSearch.addEventListener('input', () => filterSidebar(sidebarSearch.value));
+
+categoryTabs.addEventListener('click', (e) => {
+  const tab = e.target.closest('.cat-tab');
+  if (!tab) return;
+  categoryTabs.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  state.activeCategory = tab.dataset.cat;
+  filterSidebar(sidebarSearch.value);
+});
 
 // ─── Canvas items ─────────────────────────────────────────────────────────────
 function addCanvasItem(instance, animate) {
@@ -515,6 +531,28 @@ btnJoin.addEventListener('click', () => {
 nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnCreate.click(); });
 codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnJoin.click(); });
 codeInput.addEventListener('input', () => { codeInput.value = codeInput.value.toUpperCase(); });
+
+// ─── Particle effects ─────────────────────────────────────────────────────────
+const TIER_COLORS = ['#f9c23c', '#4ecdc4', '#a855f7', '#e94560'];
+
+function spawnParticles(canvasX, canvasY, tier) {
+  const rect = canvasWrap.getBoundingClientRect();
+  const sx = rect.left + canvasX - canvasWrap.scrollLeft + 43;
+  const sy = rect.top  + canvasY - canvasWrap.scrollTop  + 48;
+
+  const color = TIER_COLORS[Math.min((tier || 1) - 1, TIER_COLORS.length - 1)];
+  const count = 8 + (tier || 1) * 2;
+
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const angle = (i / count) * Math.PI * 2;
+    const dist = 40 + Math.random() * 40;
+    p.style.cssText = `left:${sx}px;top:${sy}px;background:${color};--dx:${Math.cos(angle) * dist}px;--dy:${Math.sin(angle) * dist}px;`;
+    document.body.appendChild(p);
+    p.addEventListener('animationend', () => p.remove(), { once: true });
+  }
+}
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 connect();

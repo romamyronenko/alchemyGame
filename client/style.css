@@ -132,6 +132,52 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   overflow: hidden;
 }
 
+/* ── Category tabs ────────────────────────────────────────────────────────── */
+.category-tabs {
+  display: flex; flex-wrap: wrap; gap: 3px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0;
+}
+
+.cat-tab {
+  flex: 1; min-width: 26px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text2);
+  font-size: .9rem;
+  cursor: pointer;
+  padding: 4px 2px;
+  text-align: center;
+  transition: background .15s, color .15s, border-color .15s;
+  line-height: 1;
+}
+
+.cat-tab:hover { background: rgba(255,255,255,.06); color: var(--text); }
+
+.cat-tab.active {
+  background: rgba(233,69,96,.15);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ── Particles ────────────────────────────────────────────────────────────── */
+.particle {
+  position: fixed;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  animation: particleFly .65s ease-out forwards;
+  transform-origin: center;
+}
+
+@keyframes particleFly {
+  0%   { transform: translate(0, 0) scale(1.2); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+}
+
 .sidebar-search { padding: 10px; }
 .sidebar-search input {
   width: 100%; padding: 7px 10px;
