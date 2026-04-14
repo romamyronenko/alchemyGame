@@ -203,21 +203,55 @@ function setElPos(el, x, y) {
 
 // ─── Drag & drop ──────────────────────────────────────────────────────────────
 
-// From sidebar — creates a new canvas element
+// Ghost element that follows cursor when dragging from sidebar
+let ghost = null;
+
+function createGhost(def) {
+  const el = document.createElement('div');
+  el.className = 'element-card ghost-drag';
+  el.innerHTML = `${def.icon || ''}<span class="card-name">${def.name}</span>`;
+  el.style.cssText = 'position:fixed;pointer-events:none;opacity:.75;z-index:9999;';
+  document.body.appendChild(el);
+  return el;
+}
+
+function moveGhost(e) {
+  if (!ghost) return;
+  ghost.style.left = (e.clientX - 43) + 'px';
+  ghost.style.top  = (e.clientY - 48) + 'px';
+}
+
+function removeGhost() {
+  if (ghost) { ghost.remove(); ghost = null; }
+}
+
+// From sidebar — creates a ghost, spawns on drop over canvas
 function onSidebarPointerDown(e, def) {
   if (e.button !== 0) return;
   e.preventDefault();
 
-  const rect = canvasWrap.getBoundingClientRect();
-  const canvasX = e.clientX - rect.left + canvasWrap.scrollLeft - 43;
-  const canvasY = e.clientY - rect.top  + canvasWrap.scrollTop  - 48;
+  ghost = createGhost(def);
+  moveGhost(e);
 
-  // Spawn on server
-  state.socket.emit('element:spawn', {
-    elementId: def.id,
-    x: Math.max(0, canvasX),
-    y: Math.max(0, canvasY),
-  });
+  function onMove(ev) { moveGhost(ev); }
+
+  function onUp(ev) {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    removeGhost();
+
+    // Check if dropped over canvas area
+    const rect = canvasWrap.getBoundingClientRect();
+    if (ev.clientX >= rect.left && ev.clientX <= rect.right &&
+        ev.clientY >= rect.top  && ev.clientY <= rect.bottom) {
+      const x = Math.max(0, ev.clientX - rect.left + canvasWrap.scrollLeft - 43);
+      const y = Math.max(0, ev.clientY - rect.top  + canvasWrap.scrollTop  - 48);
+      state.socket.emit('element:spawn', { elementId: def.id, x, y });
+    }
+  }
+
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
 }
 
 // From canvas — drags existing element

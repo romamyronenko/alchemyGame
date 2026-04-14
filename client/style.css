@@ -176,6 +176,12 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 
 .element-card:active { cursor: grabbing; transform: scale(.95); }
 
+.ghost-drag {
+  box-shadow: 0 8px 30px rgba(0,0,0,.6);
+  border-color: var(--accent) !important;
+  transform: scale(1.05);
+}
+
 .element-card svg {
   width: 44px; height: 44px;
   pointer-events: none;
