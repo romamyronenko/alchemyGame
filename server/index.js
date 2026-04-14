@@ -8,7 +8,7 @@ const path       = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const db = require('./db');
-const { elementMap, recipeMap, ELEMENTS } = require('./elements');
+const { elementMap, recipeMap, reverseRecipeMap, ELEMENTS } = require('./elements');
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 db.initDb();
@@ -53,6 +53,8 @@ function roomSnapshot(room) {
     canvas:      [...room.canvas.values()],
     members:     [...room.members.entries()].map(([sid, m]) => ({ socketId: sid, ...m })),
     allElements: ELEMENTS.map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter, icon: elementMap.get(e.id)?.icon })),
+    // recipe lookup: elementId → sorted input ids
+    recipes: Object.fromEntries(reverseRecipeMap),
   };
 }
 
@@ -222,6 +224,13 @@ io.on('connection', (socket) => {
     if (isNew) {
       io.to(room.code).emit('discovery:new', { elementDef: resultDef });
     }
+  });
+
+  // ── Cursor position ──
+  socket.on('cursor:move', ({ x, y }) => {
+    const room = getRoom();
+    if (!room) return;
+    socket.to(room.code).emit('cursor:moved', { socketId: socket.id, x, y });
   });
 
   // ── Delete element ──

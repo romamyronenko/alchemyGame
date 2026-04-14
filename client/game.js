@@ -10,40 +10,53 @@ const state = {
   // All element definitions (from server)
   allElements: {},      // id → def
 
+  // Recipes: elementId → inputIds[]
+  recipes: {},
+
   // Discovered element ids in this room
   discovered: new Set(),
 
   // Canvas instances: instanceId → { instanceId, elementId, x, y, el (DOM) }
   canvasItems: new Map(),
 
+  // Remote cursors: socketId → DOM element
+  remoteCursors: new Map(),
+
   // Drag state
   drag: null,
-  // drag = { instanceId, elementId, startX, startY, offsetX, offsetY, fromSidebar }
 
   // Throttle for element:move
   moveRaf: null,
   pendingMove: null,
+
+  // Cursor throttle
+  cursorRaf: null,
 };
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
-const modalOverlay   = $('modal-overlay');
-const nicknameInput  = $('nickname-input');
-const codeInput      = $('code-input');
-const btnCreate      = $('btn-create');
-const btnJoin        = $('btn-join');
-const btnCopyCode    = $('btn-copy-code');
-const btnClear       = $('btn-clear');
-const modalError     = $('modal-error');
-const app            = $('app');
-const roomCodeDisplay= $('room-code-display');
-const membersList    = $('members-list');
-const discoveryCount = $('discovery-count');
-const sidebarSearch  = $('sidebar-search');
-const sidebarEl      = $('sidebar-elements');
-const canvas         = $('canvas');
-const canvasWrap     = $('canvas-wrap');
-const toast          = $('discovery-toast');
+const modalOverlay    = $('modal-overlay');
+const nicknameInput   = $('nickname-input');
+const codeInput       = $('code-input');
+const btnCreate       = $('btn-create');
+const btnJoin         = $('btn-join');
+const btnCopyCode     = $('btn-copy-code');
+const btnClear        = $('btn-clear');
+const btnRecipes      = $('btn-recipes');
+const btnCloseRecipes = $('btn-close-recipes');
+const modalError      = $('modal-error');
+const app             = $('app');
+const roomCodeDisplay = $('room-code-display');
+const membersList     = $('members-list');
+const discoveryCount  = $('discovery-count');
+const sidebarSearch   = $('sidebar-search');
+const sidebarEl       = $('sidebar-elements');
+const canvas          = $('canvas');
+const canvasWrap      = $('canvas-wrap');
+const toast           = $('discovery-toast');
+const recipesPanel    = $('recipes-panel');
+const recipesList     = $('recipes-list');
+const recipesSearch   = $('recipes-search');
 
 // ─── Socket setup ─────────────────────────────────────────────────────────────
 function connect() {
@@ -60,6 +73,11 @@ function connect() {
   sock.on('member:left', ({ socketId, nickname }) => {
     const chip = document.querySelector(`[data-sid="${socketId}"]`);
     if (chip) chip.remove();
+    removeRemoteCursor(socketId);
+  });
+
+  sock.on('cursor:moved', ({ socketId, x, y }) => {
+    updateRemoteCursor(socketId, x, y);
   });
 
   sock.on('element:spawned', ({ instance }) => {
@@ -93,6 +111,7 @@ function connect() {
     state.allElements[elementDef.id] = elementDef;
     addSidebarCard(elementDef);
     updateDiscoveryCount();
+    addRecipeRow(elementDef.id);
     showToast(elementDef);
   });
 }
@@ -101,6 +120,7 @@ function connect() {
 function onRoomState(snap) {
   state.roomCode   = snap.code;
   state.discovered = new Set(snap.discovered.map(e => e.id));
+  state.recipes    = snap.recipes || {};
 
   // Register all element defs
   for (const e of snap.allElements) state.allElements[e.id] = e;
@@ -126,6 +146,12 @@ function onRoomState(snap) {
   }
   updateDiscoveryCount();
 
+  // Recipes panel
+  recipesList.innerHTML = '';
+  for (const e of snap.discovered) {
+    if (!state.allElements[e.id]?.isStarter) addRecipeRow(e.id);
+  }
+
   // Canvas items
   canvas.innerHTML = '';
   state.canvasItems.clear();
@@ -147,7 +173,6 @@ function addSidebarCard(def) {
   card.innerHTML = `
     ${def.icon || ''}
     <span class="card-name">${def.name}</span>
-    <span class="tier-badge">T${def.tier || '?'}</span>
   `;
 
   card.addEventListener('pointerdown', (e) => onSidebarPointerDown(e, def));
@@ -329,6 +354,90 @@ document.addEventListener('pointerup', (e) => {
 
   state.drag = null;
 });
+
+// ─── Remote cursors ───────────────────────────────────────────────────────────
+function getOrCreateCursor(socketId) {
+  if (state.remoteCursors.has(socketId)) return state.remoteCursors.get(socketId);
+
+  const members = [...document.querySelectorAll('[data-sid]')];
+  const chip = members.find(el => el.dataset.sid === socketId);
+  const color = chip ? chip.style.background : '#fff';
+  const nickname = chip ? chip.textContent : '?';
+
+  const el = document.createElement('div');
+  el.className = 'remote-cursor';
+  el.innerHTML = `
+    <svg width="16" height="20" viewBox="0 0 16 20">
+      <path d="M0,0 L0,16 L4,12 L7,18 L9,17 L6,11 L12,11Z" fill="${color}" stroke="#000" stroke-width="1"/>
+    </svg>
+    <div class="remote-cursor-label" style="background:${color}">${nickname}</div>
+  `;
+  canvas.appendChild(el);
+  state.remoteCursors.set(socketId, el);
+  return el;
+}
+
+function updateRemoteCursor(socketId, x, y) {
+  const el = getOrCreateCursor(socketId);
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+}
+
+function removeRemoteCursor(socketId) {
+  const el = state.remoteCursors.get(socketId);
+  if (el) { el.remove(); state.remoteCursors.delete(socketId); }
+}
+
+// Emit own cursor position (throttled)
+canvasWrap.addEventListener('pointermove', (e) => {
+  if (!state.roomCode || !state.socket) return;
+  if (state.cursorRaf) return;
+  state.cursorRaf = requestAnimationFrame(() => {
+    state.cursorRaf = null;
+    const rect = canvasWrap.getBoundingClientRect();
+    const x = e.clientX - rect.left + canvasWrap.scrollLeft;
+    const y = e.clientY - rect.top  + canvasWrap.scrollTop;
+    state.socket.emit('cursor:move', { x, y });
+  });
+});
+
+// ─── Recipes panel ────────────────────────────────────────────────────────────
+function addRecipeRow(elementId) {
+  if (document.querySelector(`.recipe-row[data-id="${elementId}"]`)) return;
+  const inputs = state.recipes[elementId];
+  if (!inputs) return;
+  const def = state.allElements[elementId];
+  if (!def) return;
+
+  const row = document.createElement('div');
+  row.className = 'recipe-row';
+  row.dataset.id = elementId;
+  row.dataset.name = def.name.toLowerCase();
+
+  const inputsHtml = inputs.map((id, i) => {
+    const d = state.allElements[id];
+    return `${i > 0 ? '<span class="recipe-plus">+</span>' : ''}
+      <span class="recipe-input">${d?.icon || ''}<span>${d?.name || id}</span></span>`;
+  }).join('');
+
+  row.innerHTML = `
+    <div class="recipe-result">${def.icon || ''}<span>${def.name}</span></div>
+    <span class="recipe-eq">=</span>
+    <div class="recipe-inputs">${inputsHtml}</div>
+  `;
+  recipesList.appendChild(row);
+}
+
+function filterRecipes(query) {
+  const q = query.toLowerCase();
+  for (const row of recipesList.querySelectorAll('.recipe-row')) {
+    row.style.display = (!q || row.dataset.name.includes(q)) ? '' : 'none';
+  }
+}
+
+btnRecipes.addEventListener('click', () => recipesPanel.classList.toggle('hidden'));
+btnCloseRecipes.addEventListener('click', () => recipesPanel.classList.add('hidden'));
+recipesSearch.addEventListener('input', () => filterRecipes(recipesSearch.value));
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 function addMemberChip(socketId, nickname, color) {

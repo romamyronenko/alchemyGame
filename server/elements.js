@@ -432,4 +432,14 @@ const elementMap = new Map(ELEMENTS.map(e => [e.id, { ...e, icon: ICONS[e.id] ||
   if (!recipeMap.has(starKey)) recipeMap.set(starKey, 'star');
 }
 
-module.exports = { ELEMENTS, elementMap, recipeMap, ICONS };
+// ─── Reverse recipe map: output → inputs[] (for recipe panel on client) ───────
+const reverseRecipeMap = new Map();
+for (const r of RAW_RECIPES) {
+  if (!reverseRecipeMap.has(r.output)) {
+    reverseRecipeMap.set(r.output, [...r.inputs].sort());
+  }
+}
+// Apply the star fix
+reverseRecipeMap.set('star', ['sky', 'sun']);
+
+module.exports = { ELEMENTS, elementMap, recipeMap, reverseRecipeMap, ICONS };

@@ -40,6 +40,7 @@
     </div>
     <div class="header-right">
       <span id="discovery-count" class="discovery-count">0 / 0</span>
+      <button id="btn-recipes" class="btn-icon" title="Відкриті рецепти">📖</button>
       <button id="btn-clear" class="btn-icon" title="Очистити поле">🗑️</button>
     </div>
   </header>
@@ -56,6 +57,16 @@
     <!-- Canvas area -->
     <div id="canvas-wrap" class="canvas-wrap">
       <div id="canvas" class="canvas"></div>
+    </div>
+
+    <!-- Recipes panel -->
+    <div id="recipes-panel" class="recipes-panel hidden">
+      <div class="recipes-header">
+        <span>📖 Відкриті рецепти</span>
+        <button id="btn-close-recipes" class="btn-icon">✕</button>
+      </div>
+      <input id="recipes-search" type="text" placeholder="Пошук рецепту..." class="recipes-search"/>
+      <div id="recipes-list" class="recipes-list"></div>
     </div>
   </div>
 </div>
