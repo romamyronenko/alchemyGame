@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Алхімія</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ── Login modal ── -->
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal">
+    <h1>⚗️ Алхімія</h1>
+    <input id="nickname-input" type="text" placeholder="Ваш нікнейм" maxlength="20" autocomplete="off"/>
+    <div class="modal-buttons">
+      <button id="btn-create" class="btn btn-primary">Нова гра</button>
+      <div class="or-divider">або</div>
+      <div class="join-row">
+        <input id="code-input" type="text" placeholder="Код кімнати" maxlength="6" autocomplete="off"/>
+        <button id="btn-join" class="btn btn-secondary">Приєднатись</button>
+      </div>
+    </div>
+    <p id="modal-error" class="modal-error"></p>
+  </div>
+</div>
+
+<!-- ── Main layout ── -->
+<div id="app" class="app hidden">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <span class="logo">⚗️ Алхімія</span>
+    </div>
+    <div class="header-center">
+      <span id="room-code-display" class="room-code"></span>
+      <button id="btn-copy-code" class="btn-icon" title="Скопіювати код">📋</button>
+      <div id="members-list" class="members-list"></div>
+    </div>
+    <div class="header-right">
+      <span id="discovery-count" class="discovery-count">0 / 0</span>
+      <button id="btn-clear" class="btn-icon" title="Очистити поле">🗑️</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-search">
+        <input id="sidebar-search" type="text" placeholder="Пошук..." autocomplete="off"/>
+      </div>
+      <div id="sidebar-elements" class="sidebar-elements"></div>
+    </aside>
+
+    <!-- Canvas area -->
+    <div id="canvas-wrap" class="canvas-wrap">
+      <div id="canvas" class="canvas"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Discovery notification ── -->
+<div id="discovery-toast" class="discovery-toast hidden">
+  <div class="toast-icon"></div>
+  <div class="toast-text">
+    <div class="toast-label">Нове відкриття!</div>
+    <div class="toast-name"></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

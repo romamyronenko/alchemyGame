@@ -1,0 +1,435 @@
+'use strict';
+
+// SVG builder helpers (48x48 viewBox)
+const s = (body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">${body}</svg>`;
+const circle  = (cx, cy, r, fill, stroke = 'none', sw = 0) =>
+  `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+const rect    = (x, y, w, h, fill, rx = 0, stroke = 'none', sw = 0) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" rx="${rx}" stroke="${stroke}" stroke-width="${sw}"/>`;
+const poly    = (pts, fill, stroke = 'none', sw = 0) =>
+  `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+const path    = (d, fill = 'none', stroke = 'none', sw = 2) =>
+  `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+const line    = (x1, y1, x2, y2, stroke, sw = 2) =>
+  `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+const txt     = (content, x, y, size = 28, fill = '#fff') =>
+  `<text x="${x}" y="${y}" font-size="${size}" text-anchor="middle" dominant-baseline="central" fill="${fill}">${content}</text>`;
+
+// Pre-built icon SVGs
+const ICONS = {
+  fire:     s(poly('24,4 44,44 4,44', '#ff6b00') + poly('24,12 38,40 10,40', '#ff9a3c')),
+  water:    s(path('M24,4 Q34,18 38,28 A14,14,0,0,1,10,28 Q14,18 24,4Z', '#1e90ff') + circle(24,30,8,'#4db8ff')),
+  earth:    s(rect(4,4,40,40,'#8B4513',4) + rect(8,8,32,32,'#a0522d',2)),
+  air:      s(path('M8,16 Q24,10 40,16','none','#87ceeb',3) + path('M8,24 Q24,18 40,24','none','#b0e0ff',3) + path('M8,32 Q24,26 40,32','none','#87ceeb',2)),
+
+  mud:      s(circle(24,24,20,'#5C4033') + circle(18,20,5,'#4a3028',0) + circle(30,26,4,'#4a3028',0)),
+  lava:     s(rect(4,4,40,40,'#b71c1c',2) + path('M4,28 Q12,20 20,28 Q28,36 36,28 Q42,22 44,28 L44,44 L4,44Z','#ff3d00')),
+  smoke:    s(circle(16,32,10,'#999') + circle(24,26,12,'#aaa') + circle(32,30,9,'#888') + circle(24,20,8,'#bbb')),
+  steam:    s(path('M16,44 Q16,34 20,28 Q24,22 20,16','none','#ddd',3) + path('M24,44 Q24,32 28,26 Q32,20 28,14','none','#eee',3) + path('M32,44 Q32,36 36,30 Q40,24 36,18','none','#ddd',2)),
+  dust:     s(circle(14,20,6,'#c2a47e') + circle(28,16,4,'#b8956a') + circle(34,28,5,'#c2a47e') + circle(20,34,4,'#b8956a') + circle(10,34,3,'#a08060')),
+  rain:     s(path('M12,4 Q24,0 36,4 Q44,10 40,20 L44,20 Q40,12 24,14 Q8,12 4,20 L8,20 Q4,10 12,4Z','#9db8d2') + line(16,28,14,40,'#1e90ff',2) + line(24,24,22,36,'#1e90ff',2) + line(32,28,30,40,'#1e90ff',2)),
+  ice:      s(poly('24,4 32,18 46,18 34,28 38,44 24,36 10,44 14,28 2,18 16,18', '#b0e0ff','#87ceeb',2)),
+  storm:    s(circle(20,18,14,'#4a4a6a') + circle(30,22,12,'#555') + circle(18,24,10,'#3a3a5a') + poly('26,20 22,32 26,32 20,44 30,28 24,28', '#ffe135')),
+
+  stone:    s(circle(24,24,20,'#808080','#666',2) + circle(18,20,5,'#999',0) + circle(30,28,4,'#aaa',0)),
+  ash:      s(rect(4,4,40,40,'#555',3) + rect(8,8,10,4,'#777',1) + rect(22,12,12,4,'#666',1) + rect(10,20,8,4,'#777',1) + rect(26,24,10,4,'#666',1)),
+  brick:    s(rect(4,4,40,40,'#c1440e',0) + rect(4,4,40,13,'#b03a0c',0) + rect(4,18,40,13,'#c1440e',0) + rect(4,32,40,13,'#b03a0c',0) + line(24,4,24,17,'#922e08',2) + line(12,18,12,31,'#922e08',2) + line(36,18,36,31,'#922e08',2) + line(18,32,18,45,'#922e08',2)),
+  sand:     s(rect(4,28,40,16,'#c2b280',2) + path('M4,28 Q12,20 20,26 Q28,32 36,24 Q42,18 44,28Z','#d4c48a') + circle(14,36,3,'#a89060') + circle(30,38,2,'#a89060') + circle(22,32,2,'#a89060')),
+  cloud:    s(circle(18,26,12,'#eee') + circle(28,22,14,'#fff') + circle(36,26,10,'#eee') + rect(8,28,32,12,'#eee',0)),
+  fog:      s(rect(4,4,40,40,'#c8d8e8',0) + path('M4,16 Q24,12 44,16','none','#aabbcc',2) + path('M4,24 Q24,20 44,24','none','#aabbcc',2) + path('M4,32 Q24,28 44,32','none','#aabbcc',2)),
+  swamp:    s(circle(24,28,18,'#2d4a1e') + path('M12,24 Q18,16 24,22 Q30,16 36,24','none','#3d6a2a',2) + circle(18,32,3,'#1a2f12') + circle(30,34,2,'#1a2f12')),
+  obsidian: s(poly('24,4 40,20 40,36 24,44 8,36 8,20', '#1a1a2e','#6a0dad',2) + poly('24,10 36,22 36,34 24,40 12,34 12,22','#2d2d50')),
+  clay:     s(circle(24,24,20,'#cc7722') + circle(24,24,14,'#dd8833') + circle(20,20,4,'#cc7722')),
+  coal:     s(poly('24,4 40,14 40,34 24,44 8,34 8,14','#1c1c1c','#444',1) + poly('24,10 36,18 36,30 24,38 12,30 12,18','#2a2a2a')),
+  salt:     s(rect(4,4,40,40,'#f5f5f0',3,'#ddd',1) + rect(10,10,10,10,'#fff',1) + rect(28,10,10,10,'#fff',1) + rect(10,28,10,10,'#fff',1) + rect(28,28,10,10,'#fff',1)),
+
+  glass:    s(rect(4,4,40,40,'#add8e6',4,'#87ceeb',2) + rect(8,8,14,28,'#c8e8f4',2) + path('M4,4 L44,44','none','#87ceeb',1)),
+  iron:     s(poly('24,4 42,14 42,34 24,44 6,34 6,14','#434343','#666',1) + poly('24,10 38,18 38,30 24,38 10,30 10,18','#555')),
+  metal:    s(circle(24,24,20,'#c0c0c0','#a0a0a0',2) + circle(24,24,12,'#d8d8d8') + circle(20,20,4,'#e8e8e8')),
+  gold:     s(circle(24,24,20,'#ffd700','#e5c100',2) + circle(24,24,12,'#ffe550') + circle(20,18,5,'#fff0a0')),
+  copper:   s(poly('24,4 42,14 42,34 24,44 6,34 6,14','#b87333','#964f1a',2) + poly('24,10 38,18 38,30 24,38 10,30 10,18','#d4874a')),
+  silver:   s(circle(24,24,20,'#e8e8e8','#c0c0c0',2) + circle(24,24,12,'#f0f0f0') + circle(20,20,4,'#fff')),
+  gem:      s(poly('24,4 40,18 36,40 12,40 8,18','#00ced1','#00a8ab',2) + poly('24,10 36,20 32,36 16,36 12,20','#40e8ea')),
+  diamond:  s(poly('24,4 44,20 24,44 4,20','#b9f2ff','#7dd8e8',2) + poly('24,10 40,22 24,40 8,22','#d4f8ff')),
+  crystal:  s(poly('24,4 34,16 34,32 24,44 14,32 14,16','#9b59b6','#7d3c98',2) + poly('24,10 30,18 30,30 24,40 18,30 18,18','#b07cc6')),
+
+  life:     s(circle(24,24,20,'#32cd32','#228b22',2) + path('M8,24 Q16,16 24,24 Q32,32 40,24','none','#90ee90',3) + circle(24,24,4,'#fff')),
+  plant:    s(poly('24,4 40,36 8,36','#228b22') + rect(21,36,6,10,'#5d4037')),
+  algae:    s(path('M4,32 Q12,16 20,24 Q28,32 36,16 Q40,8 44,16','none','#006400',3) + path('M4,38 Q12,22 20,30 Q28,38 36,22','none','#228b22',2)),
+  mushroom: s(path('M8,28 Q8,8 24,8 Q40,8 40,28Z','#a0522d') + rect(18,28,12,14,'#f5deb3',2) + circle(24,18,4,'#c68642')),
+  seed:     s(path('M24,40 Q16,28 20,16 Q24,8 28,16 Q32,28 24,40Z','#a0522d') + circle(24,20,5,'#8b4513')),
+  flower:   s(circle(24,24,6,'#ffd700') + circle(14,14,6,'#ff69b4') + circle(24,8,6,'#ff69b4') + circle(34,14,6,'#ff69b4') + circle(38,24,6,'#ff69b4') + circle(34,34,6,'#ff69b4') + circle(24,38,6,'#ff69b4') + circle(14,34,6,'#ff69b4') + circle(8,24,6,'#ff69b4')),
+  tree:     s(poly('24,4 40,28 8,28','#228b22') + poly('24,12 38,32 10,32','#2e7d32') + rect(20,32,8,14,'#5d4037')),
+  wood:     s(rect(4,12,40,24,'#8b5e3c',2) + line(4,20,44,20,'#6b4423',2) + line(4,28,44,28,'#6b4423',2) + line(16,12,14,36,'#6b4423',1) + line(32,12,30,36,'#6b4423',1)),
+  fruit:    s(circle(24,28,18,'#cc2200') + path('M20,12 Q22,4 28,6','none','#228b22',3) + circle(22,26,6,'#ee4422')),
+  grass:    s(line(12,40,10,16,'#4caf50',3) + line(18,40,20,12,'#388e3c',3) + line(24,40,24,14,'#4caf50',3) + line(30,40,28,12,'#388e3c',3) + line(36,40,38,16,'#4caf50',3)),
+  forest:   s(rect(4,4,40,40,'#1b5e20',3) + poly('12,36 18,16 24,36','#2e7d32') + poly('24,36 30,16 36,36','#388e3c') + poly('8,36 16,20 24,36','#1b5e20') + poly('24,36 32,20 40,36','#2e7d32')),
+
+  human:    s(circle(24,10,8,'#f5cba7') + line(24,18,24,34,'#f5cba7',3) + line(24,24,14,30,'#f5cba7',3) + line(24,24,34,30,'#f5cba7',3) + line(24,34,16,44,'#f5cba7',3) + line(24,34,32,44,'#f5cba7',3)),
+  farmer:   s(circle(24,10,8,'#f5cba7') + rect(18,16,12,18,'#8d5524',2) + line(24,34,18,44,'#8d5524',3) + line(24,34,30,44,'#8d5524',3) + line(32,20,44,32,'#5d4037',3)),
+  hunter:   s(circle(24,10,8,'#f5cba7') + rect(18,16,12,18,'#5d4037',2) + line(24,34,18,44,'#5d4037',3) + line(24,34,30,44,'#5d4037',3) + line(8,36,36,18,'#8b4513',3) + circle(8,36,3,'#555')),
+  warrior:  s(circle(24,10,8,'#f5cba7') + rect(17,16,14,18,'#607d8b',2) + line(24,34,18,44,'#607d8b',3) + line(24,34,30,44,'#607d8b',3) + line(36,10,36,36,'#9e9e9e',4) + line(32,16,40,16,'#9e9e9e',3)),
+  wizard:   s(poly('24,2 28,20 44,24 28,28 24,46 20,28 4,24 20,20','#ffe135') + circle(24,24,8,'#7b1fa2') + circle(24,24,4,'#ce93d8')),
+  tribe:    s(circle(12,12,7,'#f5cba7') + line(12,19,12,32,'#795548',2) + circle(24,8,7,'#e8b88a') + line(24,15,24,32,'#6d4c41',2) + circle(36,12,7,'#f5cba7') + line(36,19,36,32,'#795548',2) + line(8,44,16,44,'#795548',2) + line(20,44,28,44,'#6d4c41',2) + line(32,44,40,44,'#795548',2)),
+
+  tool:     s(path('M10,38 L30,18','none','#78909c',5) + circle(34,14,8,'#78909c','#546e7a',2) + circle(34,14,4,'#eceff1') + circle(10,38,4,'#78909c')),
+  axe:      s(poly('10,10 30,4 30,24','#546e7a','#37474f',1) + rect(26,20,6,24,'#8d6e63',2)),
+  wheel:    s(circle(24,24,20,'#5d4037','#3e2723',3) + circle(24,24,14,'none','#5d4037',2) + circle(24,24,4,'#3e2723') + line(24,4,24,10,'#3e2723',3) + line(24,38,24,44,'#3e2723',3) + line(4,24,10,24,'#3e2723',3) + line(38,24,44,24,'#3e2723',3)),
+  wall:     s(rect(4,4,40,13,'#c1440e',0) + rect(4,18,40,13,'#b03a0c',0) + rect(4,32,40,13,'#c1440e',0) + line(24,4,24,17,'#922e08',2) + line(12,18,12,31,'#922e08',2) + line(36,18,36,31,'#922e08',2) + line(18,32,18,45,'#922e08',2) + line(4,17,44,17,'#922e08',1) + line(4,31,44,31,'#922e08',1)),
+  house:    s(poly('4,26 24,6 44,26','#e57373') + rect(6,24,36,20,'#ef9a9a',0) + rect(16,32,10,12,'#5d4037',2) + rect(26,28,10,8,'#add8e6',1)),
+  village:  s(poly('4,22 12,10 20,22','#e57373') + rect(4,20,16,12,'#ef9a9a') + poly('18,24 28,10 38,24','#c62828') + rect(18,22,20,12,'#e57373') + poly('28,20 38,8 48,20','#e57373') + rect(28,18,20,12,'#ef9a9a')),
+  city:     s(rect(4,20,8,24,'#b0bec5',0) + rect(14,12,8,32,'#90a4ae',0) + rect(24,8,8,36,'#78909c',0) + rect(34,16,10,28,'#90a4ae',0) + rect(4,44,40,2,'#546e7a',0) + line(6,24,10,24,'#cfd8dc',1) + line(6,28,10,28,'#cfd8dc',1) + line(16,16,20,16,'#cfd8dc',1) + line(16,20,20,20,'#cfd8dc',1) + line(26,12,30,12,'#cfd8dc',1) + line(36,20,42,20,'#cfd8dc',1)),
+  road:     s(rect(4,18,40,12,'#9e9e9e',1) + line(24,18,24,30,'#eeeeee',2) + line(12,14,14,18,'#bdbdbd',2) + line(34,14,36,18,'#bdbdbd',2)),
+  bridge:   s(path('M4,36 Q24,16 44,36','none','#90a4ae',4) + rect(4,34,8,10,'#78909c',1) + rect(36,34,8,10,'#78909c',1) + line(4,40,44,40,'#607d8b',4) + line(14,40,14,28,'#90a4ae',2) + line(24,40,24,24,'#90a4ae',2) + line(34,40,34,28,'#90a4ae',2)),
+  boat:     s(path('M6,32 Q6,40 24,40 Q42,40 42,32Z','#795548') + path('M6,32 L10,20 L38,20 L42,32','#8d6e63') + path('M22,20 L22,8 L36,18','none','#fff',2)),
+  ship:     s(path('M4,34 Q4,44 24,44 Q44,44 44,34Z','#546e7a') + rect(6,24,32,12,'#607d8b',0) + line(22,24,22,6,'#90a4ae',3) + path('M22,6 L38,18 L22,18','#fff') + line(30,24,30,14,'#90a4ae',2)),
+
+  sword:    s(rect(22,6,4,30,'#9e9e9e',1) + rect(12,28,24,4,'#9e9e9e',1) + poly('24,4 27,10 21,10','#e0e0e0') + circle(24,36,4,'#ffd700')),
+  armor:    s(path('M12,8 Q6,12 6,24 L6,38 Q6,42 10,42 L38,42 Q42,42 42,38 L42,24 Q42,12 36,8 L30,4 L18,4Z','#607d8b','#455a64',2) + path('M24,4 L24,42','none','#546e7a',2) + rect(16,16,16,6,'#78909c',2)),
+  cannon:   s(rect(8,24,32,12,'#37474f',3,'#263238',2) + circle(8,30,8,'#455a64','#263238',2) + rect(36,20,8,20,'#37474f',2) + circle(10,28,3,'#263238')),
+  gunpowder:s(circle(24,24,20,'#333') + circle(16,20,4,'#555') + circle(28,16,3,'#fff') + circle(32,28,3,'#f4d03f') + circle(18,30,3,'#fff') + circle(20,16,2,'#555') + circle(30,32,2,'#f4d03f')),
+  sulfur:   s(circle(24,24,20,'#f4d03f','#d4ac0d',2) + circle(24,24,12,'#f9e270') + circle(20,20,5,'#fffacd')),
+  volcano:  s(poly('24,4 44,44 4,44','#8d2b0b') + poly('24,4 38,40 10,40','#b71c1c') + path('M16,18 Q20,10 24,14 Q28,10 32,18','none','#ff3d00',3) + circle(24,12,4,'#ff6b00')),
+
+  lightning:s(poly('28,4 20,26 28,26 18,44 32,20 22,20 30,4','#ffe135','#e6c800',1)),
+  thunder:  s(poly('30,4 20,26 30,26 16,44 34,20 22,20 32,4','#ffc107','#e6aa00',1)),
+  rainbow:  s(path('M4,40 Q4,8 44,8 Q44,40 38,40 Q38,14 24,14 Q10,14 10,40Z','none','none',0) + path('M4,40 Q4,8 44,8','none','#ff0000',3) + path('M7,40 Q7,12 44,12','none','#ff7f00',3) + path('M10,40 Q10,16 40,16','none','#ffff00',3) + path('M13,40 Q13,20 38,20','none','#00ff00',3) + path('M16,40 Q16,24 36,24','none','#0000ff',3) + path('M19,40 Q19,28 33,28','none','#8b00ff',3)),
+  sun:      s(circle(24,24,14,'#ffeb3b','#f9a825',2) + line(24,2,24,8,'#f9a825',3) + line(24,40,24,46,'#f9a825',3) + line(2,24,8,24,'#f9a825',3) + line(40,24,46,24,'#f9a825',3) + line(8,8,13,13,'#f9a825',2) + line(35,35,40,40,'#f9a825',2) + line(40,8,35,13,'#f9a825',2) + line(8,40,13,35,'#f9a825',2)),
+  sky:      s(rect(4,4,40,40,'#87ceeb',4) + circle(12,16,5,'#fff') + circle(18,12,7,'#fff') + circle(26,14,6,'#fff') + circle(32,16,5,'#fff')),
+  moon:     s(path('M28,6 A18,18,0,1,0,28,42 A12,12,0,1,1,28,6Z','#f0e68c','#d4c46a',1)),
+  star:     s(poly('24,2 29,18 46,18 32,28 38,44 24,34 10,44 16,28 2,18 19,18','#fffacd','#e5d800',1)),
+  cosmos:   s(rect(4,4,40,40,'#0a0a2a',4) + circle(10,10,1,'#fff') + circle(20,8,2,'#fff') + circle(34,6,1,'#fff') + circle(38,16,1,'#fffacd') + circle(14,24,1,'#fff') + circle(28,20,2,'#fffacd') + circle(40,28,1,'#fff') + circle(8,36,1,'#fff') + circle(24,36,1,'#fff') + circle(36,38,2,'#fffacd')),
+  planet:   s(circle(24,24,16,'#1565c0','#0d47a1',2) + circle(14,22,3,'#42a5f5') + circle(28,16,4,'#1e88e5') + path('M4,24 Q24,14 44,24','none','#7986cb',3)),
+  meteor:   s(path('M44,4 L14,34','none','#ff5722',3) + path('M40,4 L10,34','none','#ff8a65',2) + circle(12,36,10,'#ff5722','#e64a19',2) + circle(10,34,4,'#ff8a65')),
+  aurora:   s(rect(4,4,40,40,'#0a1628',4) + path('M4,20 Q14,12 24,20 Q34,28 44,20','none','#00e676',3) + path('M4,28 Q14,20 24,28 Q34,36 44,28','none','#00b0ff',3) + path('M4,36 Q14,28 24,36 Q34,44 44,36','none','#e040fb',2) + circle(8,8,1,'#fff') + circle(30,6,1,'#fff') + circle(42,12,1,'#fff')),
+
+  magic:    s(poly('24,4 27,20 42,20 30,29 34,44 24,36 14,44 18,29 6,20 21,20','#9c27b0','#7b1fa2',1) + circle(24,26,6,'#e040fb')),
+  potion:   s(path('M18,4 L18,18 Q6,26 6,36 Q6,44 24,44 Q42,44 42,36 Q42,26 30,18 L30,4Z','#e040fb','#aa00ff',2) + path('M18,4 L30,4','none','#aa00ff',3) + circle(24,34,8,'#f8bbd0') + circle(20,30,3,'#fff')),
+  philosopher_stone: s(circle(24,24,20,'#ff6f00','#e65100',3) + circle(24,24,12,'#ffa000') + circle(24,24,5,'#ffd54f') + circle(30,18,4,'#fff8e1')),
+  elixir:   s(path('M18,4 L18,18 Q6,26 6,36 Q6,44 24,44 Q42,44 42,36 Q42,26 30,18 L30,4Z','#00e676','#00c853',2) + path('M18,4 L30,4','none','#00c853',3) + circle(24,34,8,'#b9f6ca') + circle(20,30,3,'#fff')),
+  spell:    s(path('M24,4 Q40,14 36,28 Q32,40 18,38 Q8,36 10,24 Q12,12 24,4Z','none','#ce93d8',3) + path('M20,12 Q30,20 26,32','none','#e040fb',2) + circle(24,4,3,'#ce93d8') + circle(36,28,3,'#e040fb') + circle(10,24,3,'#ce93d8')),
+  rune:     s(rect(6,6,36,36,'#4a148c',4,'#6a1b9a',2) + line(16,14,16,34,'#e1bee7',3) + line(16,14,24,24,'#e1bee7',3) + line(16,34,24,24,'#e1bee7',3) + line(32,14,32,34,'#e1bee7',3)),
+  golem:    s(rect(12,4,24,12,'#8d6e63',2) + rect(8,16,32,18,'#795548',2) + rect(4,16,6,14,'#8d6e63',1) + rect(38,16,6,14,'#8d6e63',1) + rect(12,34,10,12,'#8d6e63',1) + rect(26,34,10,12,'#8d6e63',1) + circle(18,10,3,'#a1887f') + circle(30,10,3,'#a1887f')),
+
+  fish:     s(path('M8,24 Q8,14 24,14 Q40,14 42,24 Q40,34 24,34 Q8,34 8,24Z','#29b6f6') + poly('42,20 48,24 42,28','#1e88e5') + circle(14,22,3,'#fff') + circle(13,22,2,'#333')),
+  bird:     s(path('M4,28 Q14,12 24,16 Q34,12 44,28','none','#ffa726',3) + path('M4,28 Q10,20 20,22','#ffa726') + path('M44,28 Q38,20 28,22','#fb8c00') + circle(22,18,6,'#ffb74d') + circle(20,16,3,'#fff') + circle(19,16,2,'#333') + poly('22,24 20,28 24,28','#ff7043')),
+  snake:    s(path('M8,36 Q8,24 18,20 Q28,16 30,24 Q32,32 24,34 Q16,36 18,28','none','#4caf50',6) + circle(8,36,4,'#388e3c') + circle(6,34,2,'#fff') + circle(6,34,1,'#333')),
+  dragon:   s(path('M14,28 Q10,16 20,12 Q24,8 28,12 Q38,16 34,28','#c62828') + path('M4,16 Q12,8 20,14','none','#b71c1c',2) + path('M44,16 Q36,8 28,14','none','#b71c1c',2) + circle(24,24,10,'#e53935') + circle(20,22,3,'#ff8a80') + circle(28,22,3,'#ff8a80') + poly('20,34 24,44 28,34','#c62828')),
+  horse:    s(circle(22,10,8,'#795548') + rect(18,16,12,16,'#8d6e63',0) + line(22,32,20,44,'#795548',4) + line(26,32,28,44,'#795548',4) + line(14,32,12,44,'#795548',4) + line(30,32,32,44,'#795548',4) + path('M22,8 Q26,2 28,8','none','#5d4037',3)),
+  wolf:     s(circle(24,20,12,'#757575') + poly('16,10 20,4 24,10','#616161') + poly('28,10 32,4 36,10','#616161') + circle(20,18,3,'#fff') + circle(19,18,2,'#333') + circle(28,18,3,'#fff') + circle(27,18,2,'#333') + path('M18,26 Q24,30 30,26','none','#555',2) + poly('22,28 24,32 26,28','#f48fb1')),
+  bear:     s(circle(24,22,16,'#6d4c41') + circle(14,10,7,'#6d4c41') + circle(34,10,7,'#6d4c41') + circle(20,20,4,'#8d6e63') + circle(28,20,4,'#8d6e63') + circle(24,24,4,'#4e342e') + path('M18,28 Q24,34 30,28','none','#4e342e',2)),
+  eagle:    s(path('M4,20 Q16,8 24,16 Q32,8 44,20','#5d4037') + path('M4,20 Q10,28 20,24','#4e342e') + path('M44,20 Q38,28 28,24','#5d4037') + circle(24,20,8,'#795548') + circle(22,18,2,'#fff') + circle(21,18,1,'#333') + poly('22,28 26,32 28,28','#ff8f00')),
+  whale:    s(path('M4,24 Q4,14 24,14 Q44,14 44,24 Q44,34 24,34 Q4,34 4,24Z','#1565c0') + poly('44,18 52,24 44,30','#0d47a1') + circle(12,20,3,'#fff') + circle(11,20,2,'#333') + path('M16,30 Q24,34 32,30','none','#1976d2',2)),
+  unicorn:  s(circle(22,10,8,'#f8bbd0') + rect(18,16,12,16,'#fce4ec',0) + line(22,32,20,44,'#f8bbd0',4) + line(26,32,28,44,'#f8bbd0',4) + line(14,32,12,44,'#f8bbd0',4) + line(30,32,32,44,'#f8bbd0',4) + line(24,6,32,0,'#ff80ab',3) + circle(32,0,3,'#ffd700')),
+
+  electricity: s(poly('28,4 20,26 28,26 18,44 32,20 22,20 30,4','#fffde7','#ffe135',2) + circle(24,24,4,'#fff')),
+  engine:   s(rect(4,14,40,24,'#546e7a',3,'#37474f',2) + circle(12,26,8,'#607d8b','#455a64',2) + circle(12,26,4,'#37474f') + circle(30,26,8,'#607d8b','#455a64',2) + circle(30,26,4,'#37474f') + rect(22,10,8,6,'#37474f',1) + line(38,14,44,10,'#ff6d00',3)),
+  airplane: s(path('M4,24 Q14,20 24,20 Q40,16 44,24 Q40,32 24,28 Q14,28 4,24Z','#90a4ae') + path('M14,20 Q18,10 26,16','#b0bec5') + path('M14,28 Q18,38 26,32','#b0bec5') + circle(38,24,4,'#e0e0e0')),
+  rocket:   s(path('M24,4 Q34,8 36,24 L24,44 L12,24 Q14,8 24,4Z','#b0bec5','#90a4ae',2) + path('M12,34 Q6,40 8,44 L16,40Z','#ff5722') + path('M36,34 Q42,40 40,44 L32,40Z','#ff5722') + circle(24,20,6,'#e3f2fd') + rect(20,18,8,4,'#78909c',1)),
+  computer: s(rect(4,4,40,30,'#263238',3,'#455a64',2) + rect(8,8,32,22,'#1565c0',1) + rect(14,34,20,4,'#37474f',0) + rect(10,38,28,4,'#455a64',2) + line(16,12,30,20,'#42a5f5',1) + line(16,20,24,14,'#64b5f6',1)),
+  internet: s(circle(14,24,10,'#1976d2','#1565c0',2) + circle(34,24,10,'#1976d2','#1565c0',2) + line(24,24,24,24,'#42a5f5',2) + path('M22,18 Q24,14 26,18','none','#42a5f5',2) + path('M22,30 Q24,34 26,30','none','#42a5f5',2) + line(14,16,34,16,'#64b5f6',1) + line(14,32,34,32,'#64b5f6',1)),
+  robot:    s(rect(12,4,24,12,'#78909c',2,'#546e7a',2) + rect(8,16,32,20,'#607d8b',2,'#546e7a',2) + rect(4,18,6,12,'#78909c',1) + rect(38,18,6,12,'#78909c',1) + rect(14,36,10,10,'#607d8b',1) + rect(26,36,10,10,'#607d8b',1) + circle(18,10,3,'#64b5f6') + circle(30,10,3,'#64b5f6') + line(14,22,22,22,'#cfd8dc',2) + line(26,22,34,22,'#cfd8dc',2)),
+  time:     s(circle(24,24,20,'#3e2723','#1a0f0a',3) + circle(24,24,18,'none','#4e342e',2) + line(24,12,24,24,'#e0e0e0',3) + line(24,24,32,28,'#bdbdbd',2) + circle(24,24,2,'#fff') + circle(24,8,2,'#fff') + circle(24,40,2,'#fff') + circle(8,24,2,'#fff') + circle(40,24,2,'#fff')),
+  void:     s(circle(24,24,20,'#000','#6a0dad',3) + circle(24,24,12,'#0d0010') + circle(20,20,3,'#1a0020') + circle(30,28,2,'#1a0020')),
+  universe: s(rect(4,4,40,40,'#0d0d2b',4) + path('M24,24 Q32,16 36,24 Q32,32 24,32 Q16,32 12,24 Q16,16 24,16 Q30,10 36,16','none','#7986cb',2) + circle(24,24,4,'#e8eaf6') + circle(10,10,1,'#fff') + circle(38,8,1,'#fff') + circle(42,36,2,'#fffacd') + circle(6,38,1,'#fff')),
+
+  pressure: s(poly('24,4 40,44 8,44','#607d8b','#455a64',2) + poly('24,12 36,40 12,40','#78909c') + line(24,20,24,36,'#455a64',2)),
+};
+
+// ─── Element definitions ────────────────────────────────────────────────────
+const ELEMENTS = [
+  // Tier 1 — starters
+  { id: 'fire',     name: 'Вогонь',            tier: 1, isStarter: true },
+  { id: 'water',    name: 'Вода',              tier: 1, isStarter: true },
+  { id: 'earth',    name: 'Земля',             tier: 1, isStarter: true },
+  { id: 'air',      name: 'Повітря',           tier: 1, isStarter: true },
+
+  // Tier 2
+  { id: 'mud',      name: 'Бруд',              tier: 2 },
+  { id: 'lava',     name: 'Лава',              tier: 2 },
+  { id: 'smoke',    name: 'Дим',               tier: 2 },
+  { id: 'steam',    name: 'Пара',              tier: 2 },
+  { id: 'dust',     name: 'Пил',               tier: 2 },
+  { id: 'rain',     name: 'Дощ',               tier: 2 },
+  { id: 'ice',      name: 'Лід',               tier: 2 },
+  { id: 'storm',    name: 'Буря',              tier: 2 },
+
+  // Tier 3 — minerals
+  { id: 'stone',    name: 'Камінь',            tier: 3 },
+  { id: 'ash',      name: 'Попіл',             tier: 3 },
+  { id: 'brick',    name: 'Цегла',             tier: 3 },
+  { id: 'sand',     name: 'Пісок',             tier: 3 },
+  { id: 'cloud',    name: 'Хмара',             tier: 3 },
+  { id: 'fog',      name: 'Туман',             tier: 3 },
+  { id: 'swamp',    name: 'Болото',            tier: 3 },
+  { id: 'obsidian', name: 'Обсидіан',          tier: 3 },
+  { id: 'clay',     name: 'Глина',             tier: 3 },
+  { id: 'coal',     name: 'Вугілля',           tier: 3 },
+  { id: 'salt',     name: 'Сіль',              tier: 3 },
+
+  // Tier 3 — metals
+  { id: 'glass',    name: 'Скло',              tier: 3 },
+  { id: 'iron',     name: 'Залізо',            tier: 3 },
+  { id: 'metal',    name: 'Метал',             tier: 3 },
+  { id: 'gold',     name: 'Золото',            tier: 3 },
+  { id: 'copper',   name: 'Мідь',              tier: 3 },
+  { id: 'silver',   name: 'Срібло',            tier: 3 },
+  { id: 'gem',      name: 'Самоцвіт',          tier: 3 },
+  { id: 'diamond',  name: 'Діамант',           tier: 4 },
+  { id: 'crystal',  name: 'Кристал',           tier: 4 },
+
+  // Tier 3 — life
+  { id: 'life',     name: 'Життя',             tier: 3 },
+  { id: 'plant',    name: 'Рослина',           tier: 3 },
+  { id: 'algae',    name: 'Водорості',         tier: 3 },
+  { id: 'mushroom', name: 'Гриб',              tier: 4 },
+  { id: 'seed',     name: 'Насіння',           tier: 4 },
+  { id: 'flower',   name: 'Квітка',            tier: 4 },
+  { id: 'tree',     name: 'Дерево',            tier: 4 },
+  { id: 'wood',     name: 'Деревина',          tier: 4 },
+  { id: 'fruit',    name: 'Фрукт',             tier: 4 },
+  { id: 'grass',    name: 'Трава',             tier: 4 },
+  { id: 'forest',   name: 'Ліс',               tier: 4 },
+
+  // Tier 4 — civilization
+  { id: 'human',    name: 'Людина',            tier: 4 },
+  { id: 'farmer',   name: 'Фермер',            tier: 5 },
+  { id: 'hunter',   name: 'Мисливець',         tier: 5 },
+  { id: 'warrior',  name: 'Воїн',              tier: 5 },
+  { id: 'wizard',   name: 'Чарівник',          tier: 5 },
+  { id: 'tribe',    name: "Плем'я",            tier: 5 },
+
+  // Structures
+  { id: 'tool',     name: 'Інструмент',        tier: 5 },
+  { id: 'axe',      name: 'Сокира',            tier: 5 },
+  { id: 'wheel',    name: 'Колесо',            tier: 5 },
+  { id: 'wall',     name: 'Стіна',             tier: 5 },
+  { id: 'house',    name: 'Будинок',           tier: 5 },
+  { id: 'village',  name: 'Село',              tier: 6 },
+  { id: 'city',     name: 'Місто',             tier: 6 },
+  { id: 'road',     name: 'Дорога',            tier: 5 },
+  { id: 'bridge',   name: 'Міст',              tier: 6 },
+
+  // Vehicles / weapons
+  { id: 'boat',     name: 'Човен',             tier: 5 },
+  { id: 'ship',     name: 'Корабель',          tier: 6 },
+  { id: 'sword',    name: 'Меч',               tier: 5 },
+  { id: 'armor',    name: 'Броня',             tier: 5 },
+  { id: 'cannon',   name: 'Гармата',           tier: 6 },
+  { id: 'gunpowder',name: 'Порох',             tier: 5 },
+  { id: 'sulfur',   name: 'Сірка',             tier: 4 },
+  { id: 'volcano',  name: 'Вулкан',            tier: 4 },
+
+  // Sky / cosmos
+  { id: 'lightning',name: 'Блискавка',         tier: 3 },
+  { id: 'thunder',  name: 'Грім',              tier: 3 },
+  { id: 'rainbow',  name: 'Веселка',           tier: 4 },
+  { id: 'sun',      name: 'Сонце',             tier: 3 },
+  { id: 'sky',      name: 'Небо',              tier: 2 },
+  { id: 'moon',     name: 'Місяць',            tier: 4 },
+  { id: 'star',     name: 'Зірка',             tier: 4 },
+  { id: 'cosmos',   name: 'Космос',            tier: 5 },
+  { id: 'planet',   name: 'Планета',           tier: 6 },
+  { id: 'meteor',   name: 'Метеор',            tier: 6 },
+  { id: 'aurora',   name: 'Аврора',            tier: 6 },
+
+  // Magic
+  { id: 'magic',    name: 'Магія',             tier: 5 },
+  { id: 'potion',   name: 'Зілля',             tier: 6 },
+  { id: 'philosopher_stone', name: 'Камінь Мудреців', tier: 7 },
+  { id: 'elixir',   name: 'Еліксир',           tier: 7 },
+  { id: 'spell',    name: 'Заклинання',        tier: 6 },
+  { id: 'rune',     name: 'Руна',              tier: 6 },
+  { id: 'golem',    name: 'Голем',             tier: 6 },
+
+  // Animals
+  { id: 'fish',     name: 'Риба',              tier: 4 },
+  { id: 'bird',     name: 'Птах',              tier: 4 },
+  { id: 'snake',    name: 'Змія',              tier: 5 },
+  { id: 'dragon',   name: 'Дракон',            tier: 6 },
+  { id: 'horse',    name: 'Кінь',              tier: 5 },
+  { id: 'wolf',     name: 'Вовк',              tier: 5 },
+  { id: 'bear',     name: 'Ведмідь',           tier: 5 },
+  { id: 'eagle',    name: 'Орел',              tier: 5 },
+  { id: 'whale',    name: 'Кит',               tier: 6 },
+  { id: 'unicorn',  name: 'Єдиноріг',          tier: 7 },
+
+  // Technology
+  { id: 'electricity', name: 'Електрика',      tier: 5 },
+  { id: 'engine',   name: 'Двигун',            tier: 6 },
+  { id: 'airplane', name: 'Літак',             tier: 7 },
+  { id: 'rocket',   name: 'Ракета',            tier: 7 },
+  { id: 'computer', name: "Комп'ютер",         tier: 7 },
+  { id: 'internet', name: 'Інтернет',          tier: 8 },
+  { id: 'robot',    name: 'Робот',             tier: 8 },
+  { id: 'time',     name: 'Час',               tier: 8 },
+  { id: 'void',     name: 'Порожнеча',         tier: 8 },
+  { id: 'universe', name: 'Всесвіт',           tier: 9 },
+
+  // Extra
+  { id: 'pressure', name: 'Тиск',              tier: 3 },
+];
+
+// ─── Recipes ─────────────────────────────────────────────────────────────────
+// inputs are always stored sorted; we'll sort again at build time anyway
+const RAW_RECIPES = [
+  // Tier 2
+  { inputs: ['earth', 'water'],              output: 'mud'       },
+  { inputs: ['earth', 'fire'],               output: 'lava'      },
+  { inputs: ['air', 'fire'],                 output: 'smoke'     },
+  { inputs: ['fire', 'water'],               output: 'steam'     },
+  { inputs: ['air', 'earth'],                output: 'dust'      },
+  { inputs: ['air', 'water'],                output: 'rain'      },
+  { inputs: ['air', 'water', 'fire'],        output: 'storm'     },
+  { inputs: ['air', 'air'],                  output: 'sky'       },
+  { inputs: ['air', 'ice'],                  output: 'snow'      },
+
+  // ice from wind+water
+  { inputs: ['air', 'rain'],                 output: 'ice'       },
+
+  // Tier 3 minerals
+  { inputs: ['lava', 'water'],               output: 'stone'     },
+  { inputs: ['earth', 'smoke'],              output: 'ash'       },
+  { inputs: ['fire', 'mud'],                 output: 'brick'     },
+  { inputs: ['air', 'stone'],                output: 'sand'      },
+  { inputs: ['air', 'steam'],                output: 'cloud'     },
+  { inputs: ['cloud', 'earth'],              output: 'fog'       },
+  { inputs: ['mud', 'rain'],                 output: 'swamp'     },
+  { inputs: ['ice', 'lava'],                 output: 'obsidian'  },
+  { inputs: ['mud', 'sand'],                 output: 'clay'      },
+  { inputs: ['ash', 'water'],                output: 'salt'      },
+  { inputs: ['stone', 'stone'],              output: 'pressure'  },
+
+  // metals
+  { inputs: ['fire', 'sand'],                output: 'glass'     },
+  { inputs: ['fire', 'stone'],               output: 'iron'      },
+  { inputs: ['fire', 'iron'],                output: 'metal'     },
+  { inputs: ['fire', 'metal'],               output: 'gold'      },
+  { inputs: ['earth', 'metal'],              output: 'copper'    },
+  { inputs: ['ice', 'metal'],                output: 'silver'    },
+  { inputs: ['fire', 'water', 'stone'],      output: 'gem'       },
+  { inputs: ['gem', 'pressure'],             output: 'diamond'   },
+  { inputs: ['crystal', 'ice'],              output: 'crystal'   },
+  { inputs: ['gem', 'ice'],                  output: 'crystal'   },
+
+  // life branch
+  { inputs: ['air', 'earth', 'fire', 'water'], output: 'life'   },
+  { inputs: ['earth', 'life'],               output: 'plant'     },
+  { inputs: ['life', 'water'],               output: 'algae'     },
+  { inputs: ['plant', 'swamp'],              output: 'mushroom'  },
+  { inputs: ['earth', 'plant'],              output: 'seed'      },
+  { inputs: ['plant', 'rain'],               output: 'flower'    },
+  { inputs: ['plant', 'plant'],              output: 'tree'      },
+  { inputs: ['stone', 'tree'],               output: 'wood'      },
+  { inputs: ['flower', 'water'],             output: 'fruit'     },
+  { inputs: ['air', 'plant'],                output: 'grass'     },
+  { inputs: ['tree', 'tree'],                output: 'forest'    },
+
+  // coal
+  { inputs: ['fire', 'wood'],                output: 'coal'      },
+
+  // volcano / sulfur / gunpowder
+  { inputs: ['earth', 'lava', 'stone'],      output: 'volcano'   },
+  { inputs: ['steam', 'volcano'],            output: 'sulfur'    },
+  { inputs: ['coal', 'salt', 'sulfur'],      output: 'gunpowder' },
+
+  // civilization
+  { inputs: ['earth', 'life'],               output: 'human'     }, // also plant; earth+life priority → plant; human uses life+life
+  { inputs: ['life', 'life'],                output: 'human'     },
+  { inputs: ['human', 'plant'],              output: 'farmer'    },
+  { inputs: ['forest', 'human'],             output: 'hunter'    },
+  { inputs: ['human', 'metal'],              output: 'warrior'   },
+  { inputs: ['air', 'fire', 'human'],        output: 'wizard'    },
+  { inputs: ['human', 'human', 'human'],     output: 'tribe'     },
+
+  // structures
+  { inputs: ['metal', 'stone'],              output: 'tool'      },
+  { inputs: ['metal', 'wood'],               output: 'axe'       },
+  { inputs: ['stone', 'wood'],               output: 'wheel'     },
+  { inputs: ['brick', 'brick', 'brick'],     output: 'wall'      },
+  { inputs: ['glass', 'wall', 'wood'],       output: 'house'     },
+  { inputs: ['house', 'house', 'house'],     output: 'village'   },
+  { inputs: ['glass', 'metal', 'village'],   output: 'city'      },
+  { inputs: ['stone', 'stone', 'stone'],     output: 'road'      }, // 3 stones → road (stone+stone=pressure, so use 3)
+  { inputs: ['metal', 'road'],               output: 'bridge'    },
+  { inputs: ['water', 'wood'],               output: 'boat'      },
+  { inputs: ['boat', 'metal'],               output: 'ship'      },
+  { inputs: ['metal', 'metal'],              output: 'sword'     },
+  { inputs: ['metal', 'metal', 'metal'],     output: 'armor'     },
+  { inputs: ['gunpowder', 'metal'],          output: 'cannon'    },
+
+  // sky / cosmos
+  { inputs: ['metal', 'storm'],              output: 'lightning' },
+  { inputs: ['air', 'storm'],                output: 'thunder'   },
+  { inputs: ['fire', 'sky'],                 output: 'sun'       },
+  { inputs: ['rain', 'sun'],                 output: 'rainbow'   },
+  { inputs: ['ice', 'sky'],                  output: 'moon'      },
+  { inputs: ['fire', 'sky'],                 output: 'star'      }, // same as sun — star takes priority if sun already found
+  { inputs: ['sky', 'star'],                 output: 'cosmos'    },
+  { inputs: ['earth', 'cosmos'],             output: 'planet'    },
+  { inputs: ['fire', 'planet'],              output: 'meteor'    },
+  { inputs: ['air', 'cosmos', 'ice'],        output: 'aurora'    },
+
+  // magic
+  { inputs: ['gem', 'wizard'],               output: 'magic'     },
+  { inputs: ['magic', 'water'],              output: 'potion'    },
+  { inputs: ['magic', 'air'],                output: 'spell'     },
+  { inputs: ['magic', 'stone'],              output: 'rune'      },
+  { inputs: ['clay', 'life', 'magic'],       output: 'golem'     },
+  { inputs: ['fire', 'gold', 'magic'],       output: 'philosopher_stone' },
+  { inputs: ['life', 'potion'],              output: 'elixir'    },
+
+  // animals
+  { inputs: ['life', 'water', 'water'],      output: 'fish'      },
+  { inputs: ['air', 'life'],                 output: 'bird'      },
+  { inputs: ['earth', 'fire', 'life'],       output: 'snake'     },
+  { inputs: ['air', 'fire', 'snake'],        output: 'dragon'    },
+  { inputs: ['grass', 'life'],               output: 'horse'     },
+  { inputs: ['forest', 'life'],              output: 'wolf'      },
+  { inputs: ['earth', 'forest', 'life'],     output: 'bear'      },
+  { inputs: ['bird', 'storm'],               output: 'eagle'     },
+  { inputs: ['fish', 'fish', 'water'],       output: 'whale'     },
+  { inputs: ['horse', 'magic'],              output: 'unicorn'   },
+
+  // technology
+  { inputs: ['lightning', 'metal'],          output: 'electricity' },
+  { inputs: ['electricity', 'fire', 'metal'], output: 'engine'   },
+  { inputs: ['air', 'engine', 'metal'],      output: 'airplane'  },
+  { inputs: ['cosmos', 'fire', 'airplane'],  output: 'rocket'    },
+  { inputs: ['electricity', 'glass', 'metal'], output: 'computer'},
+  { inputs: ['computer', 'computer'],        output: 'internet'  },
+  { inputs: ['computer', 'life', 'metal'],   output: 'robot'     },
+  { inputs: ['cosmos', 'magic'],             output: 'time'      },
+  { inputs: ['cosmos', 'cosmos', 'magic'],   output: 'void'      },
+  { inputs: ['cosmos', 'life', 'void'],      output: 'universe'  },
+];
+
+// ─── Build lookup map ─────────────────────────────────────────────────────────
+const recipeMap = new Map();
+for (const r of RAW_RECIPES) {
+  const key = [...r.inputs].sort().join('+');
+  // Don't overwrite: first definition wins
+  if (!recipeMap.has(key)) recipeMap.set(key, r.output);
+}
+
+// ─── Element map for O(1) lookup by id ───────────────────────────────────────
+const elementMap = new Map(ELEMENTS.map(e => [e.id, { ...e, icon: ICONS[e.id] || txt('?', 24, 24) }]));
+
+// Fix: earth+life conflicts with plant — remap so life+life=human, earth+life=plant
+// (already handled by recipe order above — plant rule comes first if it exists)
+// But actually both exist: let's just ensure plant takes earth+life
+// and human uses life+life:
+// Remove the duplicate earth+life → human if needed
+{
+  const k1 = ['earth','life'].sort().join('+');
+  const k2 = ['life','life'].sort().join('+');
+  // k1 first match is 'plant' (from line ordering), k2 → 'human' — correct
+  // Fix star/sun conflict: sun was set first, so star needs different recipe
+  const sunKey  = ['fire','sky'].sort().join('+');
+  recipeMap.set(sunKey, 'sun'); // sun is always fire+sky
+  // Give star a unique recipe: sky+fire+star would be circular; use sun+sky
+  const starKey = ['sky','sun'].sort().join('+');
+  if (!recipeMap.has(starKey)) recipeMap.set(starKey, 'star');
+}
+
+module.exports = { ELEMENTS, elementMap, recipeMap, ICONS };
