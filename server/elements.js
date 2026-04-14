@@ -334,7 +334,6 @@ const RAW_RECIPES = [
   { inputs: ['coal', 'salt', 'sulfur'],      output: 'gunpowder' },
 
   // civilization
-  { inputs: ['earth', 'life'],               output: 'human'     }, // also plant; earth+life priority → plant; human uses life+life
   { inputs: ['life', 'life'],                output: 'human'     },
   { inputs: ['human', 'plant'],              output: 'farmer'    },
   { inputs: ['forest', 'human'],             output: 'hunter'    },
@@ -415,19 +414,10 @@ for (const r of RAW_RECIPES) {
 // ─── Element map for O(1) lookup by id ───────────────────────────────────────
 const elementMap = new Map(ELEMENTS.map(e => [e.id, { ...e, icon: ICONS[e.id] || txt('?', 24, 24) }]));
 
-// Fix: earth+life conflicts with plant — remap so life+life=human, earth+life=plant
-// (already handled by recipe order above — plant rule comes first if it exists)
-// But actually both exist: let's just ensure plant takes earth+life
-// and human uses life+life:
-// Remove the duplicate earth+life → human if needed
+// Fix star/sun conflict: both were fire+sky; give star a unique recipe
 {
-  const k1 = ['earth','life'].sort().join('+');
-  const k2 = ['life','life'].sort().join('+');
-  // k1 first match is 'plant' (from line ordering), k2 → 'human' — correct
-  // Fix star/sun conflict: sun was set first, so star needs different recipe
   const sunKey  = ['fire','sky'].sort().join('+');
-  recipeMap.set(sunKey, 'sun'); // sun is always fire+sky
-  // Give star a unique recipe: sky+fire+star would be circular; use sun+sky
+  recipeMap.set(sunKey, 'sun');
   const starKey = ['sky','sun'].sort().join('+');
   if (!recipeMap.has(starKey)) recipeMap.set(starKey, 'star');
 }
