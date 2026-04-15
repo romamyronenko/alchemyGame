@@ -655,16 +655,18 @@ function renderHints() {
     const def = state.allElements[resultId];
     if (!def) continue;
 
-    const isSame = inputs[0] === inputs[1]; // same ingredient used twice
-
-    // Build ingredient slots
-    let slotsHtml;
-    if (isSame) {
-      // Two touching grey squares = same element needed twice
-      slotsHtml = `<div class="hint-slot"></div><div class="hint-slot same"></div>`;
-    } else {
-      slotsHtml = `<div class="hint-slot"></div><span class="hint-plus">+</span><div class="hint-slot"></div>`;
+    // Group consecutive identical inputs → touching squares; different → separated by +
+    const groups = [];
+    for (const id of inputs) {
+      if (groups.length && groups[groups.length - 1].id === id) groups[groups.length - 1].count++;
+      else groups.push({ id, count: 1 });
     }
+    const slotsHtml = groups.map((g, gi) =>
+      (gi > 0 ? '<span class="hint-plus">+</span>' : '') +
+      Array.from({ length: g.count }, (_, si) =>
+        `<div class="hint-slot${si > 0 ? ' same' : ''}"></div>`
+      ).join('')
+    ).join('');
 
     const row = document.createElement('div');
     row.className = 'hint-row';
