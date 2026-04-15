@@ -167,6 +167,11 @@ function connect() {
     applyHintsMode();
   });
 
+  sock.on('host:changed', ({ socketId }) => {
+    state.hostSocketId = socketId;
+    applyHintsMode();
+  });
+
   // ── Competition events ──
   sock.on('comp:round:start', onCompRoundStart);
   sock.on('comp:round:end',   onCompRoundEnd);

@@ -292,6 +292,7 @@ io.on('connection', (socket) => {
     }
 
     room.members.set(socket.id, { nickname: finalNickname, color: nextColor() });
+    if (!room.hostSocketId) room.hostSocketId = socket.id;
     if (room.isCompetition) {
       room.scores.set(socket.id, 0);
       room.playerCanvases.set(socket.id, new Map());
@@ -504,10 +505,11 @@ io.on('connection', (socket) => {
     if (member) {
       io.to(room.code).emit('member:left', { socketId: socket.id, nickname: member.nickname });
     }
-    // Transfer host in competition
-    if (room.isCompetition && socket.id === room.hostSocketId && room.members.size > 0) {
+    // Transfer host if needed
+    if (socket.id === room.hostSocketId && room.members.size > 0) {
       room.hostSocketId = [...room.members.keys()][0];
-      io.to(room.code).emit('comp:host:changed', { socketId: room.hostSocketId });
+      const ev = room.isCompetition ? 'comp:host:changed' : 'host:changed';
+      io.to(room.code).emit(ev, { socketId: room.hostSocketId });
     }
     // If room is empty, keep it in DB but remove from memory after a bit
     if (room.members.size === 0) {
