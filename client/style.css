@@ -207,6 +207,9 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 
 /* Dead element: no recipes at all */
+.sidebar-card.dead {
+  opacity: .45;
+}
 .sidebar-card.dead::after {
   content: '∅';
   position: absolute; top: 3px; right: 5px;
