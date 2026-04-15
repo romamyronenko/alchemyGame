@@ -60,6 +60,7 @@ const canvasWrap      = $('canvas-wrap');
 const sidebarContainer  = document.querySelector('.sidebar');
 const sidebarOverlay    = $('sidebar-overlay');
 const btnSidebarToggle  = $('btn-sidebar-toggle');
+const btnMute         = $('btn-mute');
 const toast           = $('discovery-toast');
 const recipesPanel    = $('recipes-panel');
 const recipesList     = $('recipes-list');
@@ -111,6 +112,8 @@ function connect() {
     addCanvasItem(result.instance, true);
     if (result.def) state.allElements[result.def.id] = result.def;
     spawnParticles(result.instance.x, result.instance.y, result.def?.tier);
+    // play combine sound only for known results; new discoveries get playDiscovery()
+    if (!result.def || state.discovered.has(result.def.id)) playCombine();
   });
 
   sock.on('discovery:new', ({ elementDef }) => {
@@ -120,6 +123,7 @@ function connect() {
     updateDiscoveryCount();
     addRecipeRow(elementDef.id);
     showToast(elementDef);
+    playDiscovery();
   });
 }
 
@@ -280,6 +284,7 @@ function onSidebarPointerDown(e, def) {
     const x = Math.max(0, canvasWrap.scrollLeft + rect.width  / 2 - 43);
     const y = Math.max(0, canvasWrap.scrollTop  + rect.height / 2 - 48);
     state.socket.emit('element:spawn', { elementId: def.id, x, y });
+    playSpawn();
     return;
   }
 
@@ -300,6 +305,7 @@ function onSidebarPointerDown(e, def) {
       const x = Math.max(0, ev.clientX - rect.left + canvasWrap.scrollLeft - 43);
       const y = Math.max(0, ev.clientY - rect.top  + canvasWrap.scrollTop  - 48);
       state.socket.emit('element:spawn', { elementId: def.id, x, y });
+      playSpawn();
     }
   }
 
@@ -582,6 +588,60 @@ function spawnParticles(canvasX, canvasY, tier) {
     document.body.appendChild(p);
     p.addEventListener('animationend', () => p.remove(), { once: true });
   }
+}
+
+// ─── Audio ────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+let muted = localStorage.getItem('alchemy-muted') === '1';
+
+function syncMuteBtn() {
+  btnMute.textContent = muted ? '🔇' : '🔊';
+}
+syncMuteBtn();
+
+btnMute.addEventListener('click', () => {
+  muted = !muted;
+  localStorage.setItem('alchemy-muted', muted ? '1' : '0');
+  syncMuteBtn();
+});
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playTone({ freq = 440, freq2 = null, type = 'sine', duration = 0.15, gain = 0.25, delay = 0 }) {
+  if (muted) return;
+  const ctx = getAudioCtx();
+  const osc = ctx.createOscillator();
+  const g   = ctx.createGain();
+  osc.connect(g);
+  g.connect(ctx.destination);
+  osc.type = type;
+  const t = ctx.currentTime + delay;
+  osc.frequency.setValueAtTime(freq, t);
+  if (freq2) osc.frequency.linearRampToValueAtTime(freq2, t + duration);
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  osc.start(t);
+  osc.stop(t + duration);
+}
+
+function playSpawn() {
+  playTone({ freq: 320, freq2: 440, duration: 0.08, gain: 0.12 });
+}
+
+function playCombine() {
+  playTone({ freq: 523, duration: 0.10, gain: 0.18 });
+  playTone({ freq: 659, delay: 0.09, duration: 0.13, gain: 0.18 });
+}
+
+function playDiscovery() {
+  playTone({ freq: 523, duration: 0.09, gain: 0.22 });
+  playTone({ freq: 659, delay: 0.09, duration: 0.09, gain: 0.22 });
+  playTone({ freq: 784, delay: 0.18, duration: 0.10, gain: 0.22 });
+  playTone({ freq: 1047, delay: 0.28, duration: 0.22, gain: 0.18 });
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
