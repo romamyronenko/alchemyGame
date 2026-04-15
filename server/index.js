@@ -63,13 +63,56 @@ const COMP_ROUNDS   = 5;
 const COMP_DURATION = 90; // seconds per round
 const COMP_STARTERS = 10; // starter elements per round
 
-function pickRandom(arr, n) {
-  const copy = [...arr];
-  const out  = [];
-  while (out.length < n && copy.length > 0) {
-    out.push(copy.splice(Math.floor(Math.random() * copy.length), 1)[0]);
+// Build adjacency once at startup: elementId → Set of elementIds it combines with
+const recipeAdj = new Map();
+for (const [key] of recipeMap) {
+  const [a, b] = key.split('+');
+  if (!b) continue;
+  if (!recipeAdj.has(a)) recipeAdj.set(a, new Set());
+  if (!recipeAdj.has(b)) recipeAdj.set(b, new Set());
+  recipeAdj.get(a).add(b);
+  recipeAdj.get(b).add(a);
+}
+
+// Greedy starter picker: maximises recipe pairs within the selected set
+function pickCompetitionStarters(count) {
+  // Sort elements by (degree / tier) descending — versatile low-tier elements first
+  const pool = ELEMENTS
+    .filter(e => recipeAdj.has(e.id))
+    .map(e => ({ id: e.id, tier: e.tier || 1, deg: recipeAdj.get(e.id).size }))
+    .sort((a, b) => (b.deg / b.tier) - (a.deg / a.tier));
+
+  const selected = new Set();
+
+  // Random seed from top-20 most versatile elements
+  const seedPool = pool.slice(0, 20);
+  selected.add(seedPool[Math.floor(Math.random() * seedPool.length)].id);
+
+  while (selected.size < count) {
+    // Score each candidate: new recipe pairs it adds + small jitter for variety
+    let best = null;
+    let bestScore = -1;
+
+    for (const { id } of pool) {
+      if (selected.has(id)) continue;
+      const partners  = recipeAdj.get(id);
+      const newPairs  = [...selected].filter(s => partners.has(s)).length;
+      const score     = newPairs * 10 + Math.random() * 3; // jitter keeps rounds different
+      if (score > bestScore) { bestScore = score; best = id; }
+    }
+
+    if (best && bestScore >= 10) {
+      // Found an element that adds ≥1 new recipe pair
+      selected.add(best);
+    } else {
+      // No connected element left — add a random high-degree element for variety
+      const remaining = pool.filter(e => !selected.has(e.id));
+      if (!remaining.length) break;
+      selected.add(remaining[Math.floor(Math.random() * Math.min(10, remaining.length))].id);
+    }
   }
-  return out;
+
+  return [...selected];
 }
 
 const ALL_EL_DEFS = () => ELEMENTS.map(e => ({
@@ -94,7 +137,7 @@ function compRoomSnapshot(room) {
 function startCompRound(room) {
   room.compPhase      = 'round';
   room.currentRound  += 1;
-  room.roundStarterIds = pickRandom(ELEMENTS, COMP_STARTERS).map(e => e.id);
+  room.roundStarterIds = pickCompetitionStarters(COMP_STARTERS);
 
   for (const sid of room.members.keys()) {
     room.playerCanvases.set(sid, new Map());
