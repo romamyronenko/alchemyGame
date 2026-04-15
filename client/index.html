@@ -43,6 +43,7 @@
       <span id="discovery-count" class="discovery-count">0 / 0</span>
       <button id="btn-recipes" class="btn-icon" title="Відкриті рецепти">📖</button>
       <button id="btn-clear" class="btn-icon" title="Очистити поле">🗑️</button>
+      <button id="btn-hints" class="btn-icon" title="Режим підказок">💡</button>
       <button id="btn-mute" class="btn-icon" title="Звук">🔊</button>
       <button id="btn-sidebar-toggle" class="btn-icon sidebar-toggle-btn" title="Елементи">🧪</button>
     </div>
@@ -95,6 +96,16 @@
     <!-- Canvas area -->
     <div id="canvas-wrap" class="canvas-wrap">
       <div id="canvas" class="canvas"></div>
+    </div>
+
+    <!-- Hints panel -->
+    <div id="hints-panel" class="hints-panel hidden">
+      <div class="hints-header">
+        <span>💡 Підказки</span>
+        <button id="btn-close-hints" class="btn-icon">✕</button>
+      </div>
+      <p class="hints-desc">Рецепти, які можна зробити з відкритих елементів</p>
+      <div id="hints-list" class="hints-list"></div>
     </div>
 
     <!-- Recipes panel -->

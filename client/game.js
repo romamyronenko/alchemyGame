@@ -31,6 +31,9 @@ const state = {
   compMyScore:       0,
   compTimerInterval: null,
 
+  // Hints mode
+  hintsEnabled: false,
+
   // Active category filter
   activeCategory: '',
 
@@ -71,6 +74,10 @@ const sidebarOverlay    = $('sidebar-overlay');
 const btnSidebarToggle  = $('btn-sidebar-toggle');
 const btnMute              = $('btn-mute');
 const toast                = $('discovery-toast');
+const btnHints             = $('btn-hints');
+const hintsPanel           = $('hints-panel');
+const hintsList            = $('hints-list');
+const btnCloseHints        = $('btn-close-hints');
 const btnCreateComp        = $('btn-create-comp');
 const compBar              = $('comp-bar');
 const compBarRound         = $('comp-bar-round');
@@ -146,6 +153,12 @@ function connect() {
     addRecipeRow(elementDef.id);
     showToast(elementDef);
     playDiscovery();
+    renderHints();
+  });
+
+  sock.on('hints:state', ({ enabled }) => {
+    state.hintsEnabled = enabled;
+    applyHintsMode();
   });
 
   // ── Competition events ──
@@ -183,9 +196,11 @@ function connect() {
 
 // ─── Room state handler ───────────────────────────────────────────────────────
 function onRoomState(snap) {
-  state.roomCode   = snap.code;
-  state.discovered = new Set(snap.discovered.map(e => e.id));
-  state.recipes    = snap.recipes || {};
+  state.roomCode     = snap.code;
+  state.hostSocketId = snap.hostSocketId || null;
+  state.hintsEnabled = snap.hintsEnabled || false;
+  state.discovered   = new Set(snap.discovered.map(e => e.id));
+  state.recipes      = snap.recipes || {};
 
   // Register all element defs
   for (const e of snap.allElements) state.allElements[e.id] = e;
@@ -216,6 +231,9 @@ function onRoomState(snap) {
   for (const e of snap.discovered) {
     if (!state.allElements[e.id]?.isStarter) addRecipeRow(e.id);
   }
+
+  // Hints
+  applyHintsMode();
 
   // Canvas items
   canvas.innerHTML = '';
@@ -610,6 +628,81 @@ btnJoin.addEventListener('click', () => {
 nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnCreate.click(); });
 codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnJoin.click(); });
 codeInput.addEventListener('input', () => { codeInput.value = codeInput.value.toUpperCase(); });
+
+// ─── Hints mode ───────────────────────────────────────────────────────────────
+function computeHints() {
+  const hints = [];
+  for (const [resultId, inputs] of Object.entries(state.recipes)) {
+    if (state.discovered.has(resultId)) continue;               // already found
+    if (!inputs.every(id => state.discovered.has(id))) continue; // missing ingredient
+    hints.push({ resultId, inputs });
+    if (hints.length >= 10) break;
+  }
+  return hints;
+}
+
+function renderHints() {
+  hintsList.innerHTML = '';
+  if (!state.hintsEnabled) return;
+
+  const hints = computeHints();
+  if (!hints.length) {
+    hintsList.innerHTML = '<p class="no-hints">Немає доступних підказок</p>';
+    return;
+  }
+
+  for (const { resultId, inputs } of hints) {
+    const def = state.allElements[resultId];
+    if (!def) continue;
+
+    const isSame = inputs[0] === inputs[1]; // same ingredient used twice
+
+    // Build ingredient slots
+    let slotsHtml;
+    if (isSame) {
+      // Two touching grey squares = same element needed twice
+      slotsHtml = `<div class="hint-slot"></div><div class="hint-slot same"></div>`;
+    } else {
+      slotsHtml = `<div class="hint-slot"></div><span class="hint-plus">+</span><div class="hint-slot"></div>`;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'hint-row';
+    row.innerHTML = `
+      <div class="hint-inputs">${slotsHtml}</div>
+      <span class="hint-eq">=</span>
+      <div class="hint-result">${def.icon || ''}<span>${def.name}</span></div>
+    `;
+    hintsList.appendChild(row);
+  }
+}
+
+function applyHintsMode() {
+  const isHost = state.socket && state.socket.id === state.hostSocketId;
+
+  // Button: host sees it always; others only when hints are on
+  btnHints.classList.toggle('hidden', !isHost && !state.hintsEnabled);
+  btnHints.classList.toggle('hints-active', state.hintsEnabled);
+  btnHints.title = state.hintsEnabled ? 'Вимкнути підказки' : 'Увімкнути підказки';
+
+  if (state.hintsEnabled) {
+    hintsPanel.classList.remove('hidden');
+    renderHints();
+  } else {
+    hintsPanel.classList.add('hidden');
+  }
+}
+
+btnHints.addEventListener('click', () => {
+  if (!state.socket) return;
+  if (state.socket.id !== state.hostSocketId) return; // only host toggles
+  state.socket.emit('hints:toggle');
+});
+
+btnCloseHints.addEventListener('click', () => {
+  // Non-host can close locally (but mode stays on server)
+  hintsPanel.classList.add('hidden');
+});
 
 // ─── Competition ──────────────────────────────────────────────────────────────
 const RANK_ICONS = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];

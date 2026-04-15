@@ -48,13 +48,14 @@ function generateCode() {
 
 function roomSnapshot(room) {
   return {
-    code:        room.code,
-    discovered:  [...room.discoveredIds].map(id => elementMap.get(id)).filter(Boolean),
-    canvas:      [...room.canvas.values()],
-    members:     [...room.members.entries()].map(([sid, m]) => ({ socketId: sid, ...m })),
-    allElements: ELEMENTS.map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter, icon: elementMap.get(e.id)?.icon, category: e.category })),
-    // recipe lookup: elementId → sorted input ids
-    recipes: Object.fromEntries(reverseRecipeMap),
+    code:         room.code,
+    discovered:   [...room.discoveredIds].map(id => elementMap.get(id)).filter(Boolean),
+    canvas:       [...room.canvas.values()],
+    members:      [...room.members.entries()].map(([sid, m]) => ({ socketId: sid, ...m })),
+    hostSocketId: room.hostSocketId,
+    hintsEnabled: room.hintsEnabled || false,
+    allElements:  ELEMENTS.map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter, icon: elementMap.get(e.id)?.icon, category: e.category })),
+    recipes:      Object.fromEntries(reverseRecipeMap),
   };
 }
 
@@ -216,10 +217,11 @@ io.on('connection', (socket) => {
 
     const room = {
       code,
-      hostSocketId: socket.id,
-      members: new Map([[socket.id, { nickname, color: nextColor() }]]),
+      hostSocketId:  socket.id,
+      hintsEnabled:  false,
+      members:       new Map([[socket.id, { nickname, color: nextColor() }]]),
       discoveredIds: new Set(ELEMENTS.filter(e => e.isStarter).map(e => e.id)),
-      canvas: new Map(),
+      canvas:        new Map(),
     };
     // Save starter discoveries
     for (const id of room.discoveredIds) db.saveDiscovery(code, id);
@@ -402,6 +404,15 @@ io.on('connection', (socket) => {
     if (!room) return;
     room.canvas.clear();
     io.to(room.code).emit('canvas:cleared');
+  });
+
+  // ── Hints mode ──
+  socket.on('hints:toggle', () => {
+    const room = getRoom();
+    if (!room || room.isCompetition) return;
+    if (socket.id !== room.hostSocketId) return;
+    room.hintsEnabled = !room.hintsEnabled;
+    io.to(room.code).emit('hints:state', { enabled: room.hintsEnabled });
   });
 
   // ── Competition controls ──
