@@ -310,8 +310,8 @@ function filterSidebar(query) {
     const name = card.querySelector('.card-name').textContent.toLowerCase();
     const matchQ   = !q || name.includes(q);
     const matchCat = !cat || card.dataset.cat === cat;
-    const isExhausted = card.classList.contains('exhausted');
-    card.style.display = (matchQ && matchCat && (!isExhausted || state.showExhausted)) ? '' : 'none';
+    const isDim = card.classList.contains('exhausted') || card.classList.contains('dead');
+    card.style.display = (matchQ && matchCat && (!isDim || state.showExhausted)) ? '' : 'none';
   }
 }
 
