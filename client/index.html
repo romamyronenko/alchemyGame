@@ -14,8 +14,9 @@
     <h1>⚗️ Алхімія</h1>
     <input id="nickname-input" type="text" placeholder="Ваш нікнейм" maxlength="20" autocomplete="off"/>
     <div class="modal-buttons">
-      <button id="btn-create" class="btn btn-primary">Нова гра</button>
-      <div class="or-divider">або</div>
+      <button id="btn-create" class="btn btn-primary">🤝 Кооперативна</button>
+      <button id="btn-create-comp" class="btn btn-competition">🏆 Змагання</button>
+      <div class="or-divider">або приєднатись</div>
       <div class="join-row">
         <input id="code-input" type="text" placeholder="Код кімнати" maxlength="6" autocomplete="off"/>
         <button id="btn-join" class="btn btn-secondary">Приєднатись</button>
@@ -47,10 +48,31 @@
     </div>
   </header>
 
+  <!-- Competition bar -->
+  <div id="comp-bar" class="comp-bar hidden">
+    <span id="comp-bar-round">Раунд — / 5</span>
+    <span id="comp-bar-timer" class="comp-timer">⏱ 1:30</span>
+    <div id="comp-bar-scores" class="comp-bar-scores"></div>
+  </div>
+
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
   <div class="main">
+
+    <!-- Competition overlay (lobby / round results / final) -->
+    <div id="comp-overlay" class="comp-overlay hidden">
+      <div class="comp-overlay-box">
+        <h2 id="comp-overlay-title"></h2>
+        <div id="comp-overlay-scores" class="comp-overlay-scores"></div>
+        <button id="btn-comp-next" class="btn btn-primary hidden">Почати гру →</button>
+        <p id="comp-overlay-wait" class="comp-overlay-wait hidden">Очікуємо хоста...</p>
+      </div>
+    </div>
     <!-- Sidebar -->
     <aside class="sidebar">
+      <div id="comp-sidebar-header" class="comp-sidebar-header hidden">
+        <span>🎯 Елементи раунду</span>
+        <span id="comp-my-score" class="comp-my-score">0 відкрито</span>
+      </div>
       <div class="sidebar-search">
         <input id="sidebar-search" type="text" placeholder="Пошук..." autocomplete="off"/>
       </div>

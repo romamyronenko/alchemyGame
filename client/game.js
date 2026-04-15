@@ -22,6 +22,15 @@ const state = {
   // Remote cursors: socketId → DOM element
   remoteCursors: new Map(),
 
+  // Competition
+  isCompetition:     false,
+  compPhase:         '',
+  hostSocketId:      null,
+  currentRound:      0,
+  roundStarters:     new Set(),
+  compMyScore:       0,
+  compTimerInterval: null,
+
   // Active category filter
   activeCategory: '',
 
@@ -60,8 +69,21 @@ const canvasWrap      = $('canvas-wrap');
 const sidebarContainer  = document.querySelector('.sidebar');
 const sidebarOverlay    = $('sidebar-overlay');
 const btnSidebarToggle  = $('btn-sidebar-toggle');
-const btnMute         = $('btn-mute');
-const toast           = $('discovery-toast');
+const btnMute              = $('btn-mute');
+const toast                = $('discovery-toast');
+const btnCreateComp        = $('btn-create-comp');
+const compBar              = $('comp-bar');
+const compBarRound         = $('comp-bar-round');
+const compBarTimer         = $('comp-bar-timer');
+const compBarScores        = $('comp-bar-scores');
+const compOverlay          = $('comp-overlay');
+const compOverlayTitle     = $('comp-overlay-title');
+const compOverlayScores    = $('comp-overlay-scores');
+const btnCompNext          = $('btn-comp-next');
+const compOverlayWait      = $('comp-overlay-wait');
+const compSidebarHeader    = $('comp-sidebar-header');
+const compMyScoreEl        = $('comp-my-score');
+const COMP_ROUNDS          = 5;
 const recipesPanel    = $('recipes-panel');
 const recipesList     = $('recipes-list');
 const recipesSearch   = $('recipes-search');
@@ -72,11 +94,12 @@ function connect() {
   const sock = state.socket;
 
   sock.on('room:created', onRoomState);
-  sock.on('room:joined',  onRoomState);
+  sock.on('room:joined',  snap => snap.isCompetition ? onCompRoomState(snap) : onRoomState(snap));
   sock.on('room:error',   ({ message }) => showModalError(message));
 
   sock.on('member:joined', ({ socketId, nickname, color }) => {
     addMemberChip(socketId, nickname, color);
+    if (state.isCompetition && state.compPhase === 'lobby') refreshCompLobbyMembers();
   });
   sock.on('member:left', ({ socketId, nickname }) => {
     const chip = document.querySelector(`[data-sid="${socketId}"]`);
@@ -112,7 +135,6 @@ function connect() {
     addCanvasItem(result.instance, true);
     if (result.def) state.allElements[result.def.id] = result.def;
     spawnParticles(result.instance.x, result.instance.y, result.def?.tier);
-    // play combine sound only for known results; new discoveries get playDiscovery()
     if (!result.def || state.discovered.has(result.def.id)) playCombine();
   });
 
@@ -124,6 +146,38 @@ function connect() {
     addRecipeRow(elementDef.id);
     showToast(elementDef);
     playDiscovery();
+  });
+
+  // ── Competition events ──
+  sock.on('comp:round:start', onCompRoundStart);
+  sock.on('comp:round:end',   onCompRoundEnd);
+  sock.on('comp:host:changed', ({ socketId }) => { state.hostSocketId = socketId; });
+
+  sock.on('comp:spawned', ({ instance }) => {
+    if (!state.canvasItems.has(instance.instanceId)) addCanvasItem(instance, false);
+  });
+  sock.on('comp:moved', ({ instanceId, x, y }) => {
+    const item = state.canvasItems.get(instanceId);
+    if (item && (!state.drag || state.drag.instanceId !== instanceId)) {
+      item.x = x; item.y = y; setElPos(item.el, x, y);
+    }
+  });
+  sock.on('comp:deleted', ({ instanceId }) => removeCanvasItem(instanceId));
+
+  sock.on('comp:combine:success', ({ consumed, result, isNew }) => {
+    for (const id of consumed) removeCanvasItem(id);
+    addCanvasItem(result.instance, true);
+    if (result.def) state.allElements[result.def.id] = result.def;
+    spawnParticles(result.instance.x, result.instance.y, result.def?.tier);
+    if (isNew) {
+      state.compMyScore++;
+      compMyScoreEl.textContent = `${state.compMyScore} відкрито`;
+      addSidebarCard(result.def);
+      showToast(result.def);
+      playDiscovery();
+    } else {
+      playCombine();
+    }
   });
 }
 
@@ -278,12 +332,16 @@ function onSidebarPointerDown(e, def) {
   if (e.button !== 0) return;
   e.preventDefault();
 
+  // In competition, only allow spawning during round
+  if (state.isCompetition && state.compPhase !== 'round') return;
+
+  const spawnEvent = state.isCompetition ? 'comp:spawn' : 'element:spawn';
+
   if (e.pointerType === 'touch') {
-    // Tap-to-spawn: place at center of visible canvas viewport
     const rect = canvasWrap.getBoundingClientRect();
     const x = Math.max(0, canvasWrap.scrollLeft + rect.width  / 2 - 43);
     const y = Math.max(0, canvasWrap.scrollTop  + rect.height / 2 - 48);
-    state.socket.emit('element:spawn', { elementId: def.id, x, y });
+    state.socket.emit(spawnEvent, { elementId: def.id, x, y });
     playSpawn();
     return;
   }
@@ -304,7 +362,7 @@ function onSidebarPointerDown(e, def) {
         ev.clientY >= rect.top  && ev.clientY <= rect.bottom) {
       const x = Math.max(0, ev.clientX - rect.left + canvasWrap.scrollLeft - 43);
       const y = Math.max(0, ev.clientY - rect.top  + canvasWrap.scrollTop  - 48);
-      state.socket.emit('element:spawn', { elementId: def.id, x, y });
+      state.socket.emit(spawnEvent, { elementId: def.id, x, y });
       playSpawn();
     }
   }
@@ -358,7 +416,8 @@ document.addEventListener('pointermove', (e) => {
   if (!state.moveRaf) {
     state.moveRaf = requestAnimationFrame(() => {
       if (state.pendingMove) {
-        state.socket.emit('element:move', state.pendingMove);
+        const ev = state.isCompetition ? 'comp:move' : 'element:move';
+        state.socket.emit(ev, state.pendingMove);
         state.pendingMove = null;
       }
       state.moveRaf = null;
@@ -378,11 +437,13 @@ document.addEventListener('pointerup', (e) => {
 
     // Check if dropped outside canvas-wrap (delete)
     const rect = canvasWrap.getBoundingClientRect();
+    const delEv  = state.isCompetition ? 'comp:delete' : 'element:delete';
+    const dropEv = state.isCompetition ? 'comp:drop'   : 'element:drop';
     if (e.clientX < rect.left || e.clientX > rect.right ||
         e.clientY < rect.top  || e.clientY > rect.bottom) {
-      state.socket.emit('element:delete', { instanceId });
+      state.socket.emit(delEv, { instanceId });
     } else {
-      state.socket.emit('element:drop', { instanceId, x: item.x, y: item.y });
+      state.socket.emit(dropEv, { instanceId, x: item.x, y: item.y });
     }
   }
 
@@ -549,6 +610,187 @@ btnJoin.addEventListener('click', () => {
 nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnCreate.click(); });
 codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnJoin.click(); });
 codeInput.addEventListener('input', () => { codeInput.value = codeInput.value.toUpperCase(); });
+
+// ─── Competition ──────────────────────────────────────────────────────────────
+const RANK_ICONS = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
+
+function onCompRoomState(snap) {
+  state.roomCode      = snap.code;
+  state.isCompetition = true;
+  state.compPhase     = snap.compPhase;
+  state.hostSocketId  = snap.hostSocketId;
+  state.currentRound  = snap.currentRound;
+  state.recipes       = snap.recipes || {};
+  state.compMyScore   = 0;
+
+  for (const e of snap.allElements) state.allElements[e.id] = e;
+
+  const me = snap.members.find(m => m.socketId === state.socket.id);
+  if (me) state.myColor = me.color;
+
+  modalOverlay.classList.add('hidden');
+  app.classList.remove('hidden');
+  app.classList.add('comp-active');
+  roomCodeDisplay.textContent = snap.code;
+  compBar.classList.remove('hidden');
+
+  membersList.innerHTML = '';
+  for (const m of snap.members) addMemberChip(m.socketId, m.nickname, m.color);
+
+  compSidebarHeader.classList.remove('hidden');
+  sidebarEl.innerHTML = '';
+  canvas.innerHTML = '';
+  state.canvasItems.clear();
+
+  compBarRound.textContent = `Раунд ${snap.currentRound} / ${COMP_ROUNDS}`;
+  renderCompBarScores(snap.members.map(m => ({
+    socketId: m.socketId, nickname: m.nickname, color: m.color,
+    totalScore: snap.scores[m.socketId] || 0,
+  })));
+
+  canvasWrap.scrollLeft = 600;
+  canvasWrap.scrollTop  = 400;
+
+  if (snap.compPhase === 'lobby') showCompLobby(snap);
+}
+
+function showCompLobby(snap) {
+  compOverlayTitle.textContent = '🏆 Змагальна кімната';
+  compOverlayScores.innerHTML = snap.members.map(m =>
+    `<div class="comp-score-row">
+       <div class="player-label">
+         <span class="member-chip" style="background:${m.color}">${m.nickname}</span>
+       </div>
+     </div>`
+  ).join('');
+  const isHost = state.socket.id === snap.hostSocketId;
+  btnCompNext.textContent = 'Почати гру →';
+  btnCompNext.classList.toggle('hidden', !isHost);
+  compOverlayWait.classList.toggle('hidden', isHost);
+  compOverlayWait.textContent = 'Очікуємо хоста...';
+  compOverlay.classList.remove('hidden');
+}
+
+function onCompRoundStart({ round, totalRounds, starterIds, duration }) {
+  state.compPhase    = 'round';
+  state.currentRound = round;
+  state.roundStarters = new Set(starterIds);
+  state.compMyScore  = 0;
+  compMyScoreEl.textContent = '0 відкрито';
+
+  compOverlay.classList.add('hidden');
+  compBarRound.textContent = `Раунд ${round} / ${totalRounds}`;
+
+  // Reset canvas
+  canvas.innerHTML = '';
+  state.canvasItems.clear();
+
+  // Populate sidebar with starter elements
+  sidebarEl.innerHTML = '';
+  for (const id of starterIds) {
+    const def = state.allElements[id];
+    if (def) addSidebarCard(def);
+  }
+
+  startCompTimer(duration);
+  playSpawn();
+}
+
+function onCompRoundEnd({ round, totalRounds, scores, isLast }) {
+  state.compPhase = isLast ? 'finished' : 'roundEnd';
+  stopCompTimer();
+
+  renderCompBarScores(scores);
+
+  const isHost = state.socket.id === state.hostSocketId;
+  compOverlayTitle.textContent = isLast
+    ? '🏆 Гра завершена!'
+    : `Раунд ${round} завершено!`;
+
+  compOverlayScores.innerHTML = scores.map((s, i) =>
+    `<div class="comp-score-row ${i === 0 ? 'winner' : ''}">
+       <div class="player-label">
+         <span class="rank">${RANK_ICONS[i] || (i+1)+'.'}</span>
+         <span class="member-chip" style="background:${s.color}">${s.nickname}</span>
+       </div>
+       <div style="display:flex;gap:10px;align-items:center;">
+         ${!isLast ? `<span class="round-pts">+${s.roundScore}</span>` : ''}
+         <span class="total-pts">${s.totalScore} pts</span>
+       </div>
+     </div>`
+  ).join('');
+
+  if (isLast) {
+    btnCompNext.classList.add('hidden');
+    compOverlayWait.classList.add('hidden');
+  } else {
+    btnCompNext.textContent = 'Наступний раунд →';
+    btnCompNext.classList.toggle('hidden', !isHost);
+    compOverlayWait.classList.toggle('hidden', isHost);
+    compOverlayWait.textContent = 'Очікуємо хоста...';
+  }
+  compOverlay.classList.remove('hidden');
+}
+
+function renderCompBarScores(scores) {
+  compBarScores.innerHTML = scores
+    .sort((a, b) => b.totalScore - a.totalScore)
+    .map(s => `<span class="comp-score-chip" style="background:${s.color}">${s.nickname} ${s.totalScore}</span>`)
+    .join('');
+}
+
+function startCompTimer(seconds) {
+  stopCompTimer();
+  let left = seconds;
+  compBarTimer.textContent = formatTime(left);
+  compBarTimer.classList.remove('urgent');
+  state.compTimerInterval = setInterval(() => {
+    left--;
+    compBarTimer.textContent = formatTime(left);
+    if (left <= 10) compBarTimer.classList.add('urgent');
+    if (left <= 0) stopCompTimer();
+  }, 1000);
+}
+
+function stopCompTimer() {
+  if (state.compTimerInterval) {
+    clearInterval(state.compTimerInterval);
+    state.compTimerInterval = null;
+  }
+}
+
+function formatTime(s) {
+  const m = Math.floor(Math.max(s, 0) / 60);
+  const sec = Math.max(s, 0) % 60;
+  return `⏱ ${m}:${String(sec).padStart(2,'0')}`;
+}
+
+btnCompNext.addEventListener('click', () => {
+  if (state.compPhase === 'lobby') {
+    state.socket.emit('comp:start');
+  } else if (state.compPhase === 'roundEnd') {
+    state.socket.emit('comp:next:round');
+  }
+});
+
+function refreshCompLobbyMembers() {
+  const members = [...document.querySelectorAll('[data-sid]')].map(el => ({
+    nickname: el.textContent, color: el.style.background,
+  }));
+  compOverlayScores.innerHTML = members.map(m =>
+    `<div class="comp-score-row">
+       <div class="player-label">
+         <span class="member-chip" style="background:${m.color}">${m.nickname}</span>
+       </div>
+     </div>`
+  ).join('');
+}
+
+btnCreateComp.addEventListener('click', () => {
+  const nickname = getNickname();
+  if (!nickname) return;
+  state.socket.emit('comp:room:create', { nickname });
+});
 
 // ─── Mobile sidebar ───────────────────────────────────────────────────────────
 function openMobileSidebar() {

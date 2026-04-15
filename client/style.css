@@ -504,3 +504,100 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
     width: 80px; height: 88px;
   }
 }
+
+/* ── Competition button ───────────────────────────────────────────────────── */
+.btn-competition {
+  background: linear-gradient(135deg, #f39c12, #e74c3c);
+  color: #fff; width: 100%;
+}
+
+/* ── Competition bar ──────────────────────────────────────────────────────── */
+.comp-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 16px;
+  background: linear-gradient(90deg, #1a2a4a, #0f3460);
+  border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.comp-bar span { font-size: .85rem; font-weight: 600; white-space: nowrap; }
+
+#comp-bar-round { color: #f39c12; }
+
+.comp-timer {
+  color: var(--text);
+  background: rgba(255,255,255,.08);
+  border-radius: 6px; padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
+  min-width: 62px; text-align: center;
+}
+.comp-timer.urgent { color: #e94560; animation: timerPulse .5s ease infinite alternate; }
+@keyframes timerPulse { from { opacity: 1; } to { opacity: .5; } }
+
+.comp-bar-scores {
+  display: flex; gap: 6px; flex-wrap: wrap; flex: 1; justify-content: flex-end;
+}
+.comp-score-chip {
+  font-size: .75rem; font-weight: 700;
+  padding: 2px 9px; border-radius: 20px; color: #fff;
+  white-space: nowrap;
+}
+
+/* ── Competition overlay ──────────────────────────────────────────────────── */
+.comp-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.78);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 300;
+}
+
+.comp-overlay-box {
+  background: var(--bg2);
+  border: 1px solid var(--bg3);
+  border-radius: 18px;
+  padding: 36px 40px;
+  width: min(480px, 92vw);
+  display: flex; flex-direction: column; gap: 18px;
+  box-shadow: 0 12px 48px rgba(0,0,0,.6);
+  text-align: center;
+}
+
+.comp-overlay-box h2 { font-size: 1.5rem; }
+
+.comp-overlay-scores {
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.comp-score-row {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg3); border-radius: 10px; padding: 8px 14px;
+  font-size: .9rem;
+}
+.comp-score-row.winner {
+  background: linear-gradient(90deg, rgba(243,156,18,.18), rgba(231,76,60,.18));
+  border: 1px solid #f39c12;
+}
+.comp-score-row .player-label {
+  display: flex; align-items: center; gap: 8px;
+}
+.comp-score-row .round-pts { color: var(--accent); font-weight: 700; font-size: .8rem; }
+.comp-score-row .total-pts { font-weight: 700; font-size: 1rem; }
+.comp-score-row .rank { font-size: 1.2rem; width: 28px; }
+
+.comp-overlay-wait { color: var(--text2); font-size: .9rem; }
+
+/* ── Competition sidebar header ───────────────────────────────────────────── */
+.comp-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(243,156,18,.12);
+  border-bottom: 1px solid rgba(243,156,18,.25);
+  flex-shrink: 0;
+  font-size: .82rem; font-weight: 700;
+}
+.comp-my-score { color: #f39c12; }
+
+/* hide coop-only sidebar controls in competition */
+.comp-active .sidebar-search,
+.comp-active .category-tabs { display: none; }
