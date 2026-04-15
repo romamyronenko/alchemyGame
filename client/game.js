@@ -387,41 +387,51 @@ function removeGhost() {
   if (ghost) { ghost.remove(); ghost = null; }
 }
 
-// From sidebar — on touch: tap to spawn at canvas center; on mouse: ghost drag
+// From sidebar — mouse: ghost on pointerdown; touch: ghost after 8px move, tap if no move
 function onSidebarPointerDown(e, def) {
   if (e.button !== 0) return;
   e.preventDefault();
 
-  // In competition, only allow spawning during round
   if (state.isCompetition && state.compPhase !== 'round') return;
-
   const spawnEvent = state.isCompetition ? 'comp:spawn' : 'element:spawn';
+  const isTouch = e.pointerType === 'touch';
+  const startX = e.clientX, startY = e.clientY;
+  let dragStarted = false;
 
-  if (e.pointerType === 'touch') {
-    const rect = canvasWrap.getBoundingClientRect();
-    const x = Math.max(0, canvasWrap.scrollLeft + rect.width  / 2 - 43);
-    const y = Math.max(0, canvasWrap.scrollTop  + rect.height / 2 - 48);
-    state.socket.emit(spawnEvent, { elementId: def.id, x, y });
-    playSpawn();
-    return;
+  if (!isTouch) {
+    dragStarted = true;
+    ghost = createGhost(def);
+    moveGhost(e);
   }
 
-  ghost = createGhost(def);
-  moveGhost(e);
-
-  function onMove(ev) { moveGhost(ev); }
+  function onMove(ev) {
+    if (!dragStarted && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 8) {
+      dragStarted = true;
+      ghost = createGhost(def);
+    }
+    if (dragStarted) moveGhost(ev);
+  }
 
   function onUp(ev) {
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
-    removeGhost();
 
-    // Check if dropped over canvas area
     const rect = canvasWrap.getBoundingClientRect();
-    if (ev.clientX >= rect.left && ev.clientX <= rect.right &&
-        ev.clientY >= rect.top  && ev.clientY <= rect.bottom) {
-      const x = Math.max(0, ev.clientX - rect.left + canvasWrap.scrollLeft - 43);
-      const y = Math.max(0, ev.clientY - rect.top  + canvasWrap.scrollTop  - 48);
+    const overCanvas = ev.clientX >= rect.left && ev.clientX <= rect.right &&
+                       ev.clientY >= rect.top  && ev.clientY <= rect.bottom;
+
+    if (dragStarted) {
+      removeGhost();
+      if (overCanvas) {
+        const x = Math.max(0, ev.clientX - rect.left + canvasWrap.scrollLeft - 43);
+        const y = Math.max(0, ev.clientY - rect.top  + canvasWrap.scrollTop  - 48);
+        state.socket.emit(spawnEvent, { elementId: def.id, x, y });
+        playSpawn();
+      }
+    } else {
+      // Touch tap (no drag): spawn at canvas centre
+      const x = Math.max(0, canvasWrap.scrollLeft + rect.width  / 2 - 43);
+      const y = Math.max(0, canvasWrap.scrollTop  + rect.height / 2 - 48);
       state.socket.emit(spawnEvent, { elementId: def.id, x, y });
       playSpawn();
     }
