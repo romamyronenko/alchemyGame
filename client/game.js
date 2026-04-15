@@ -280,7 +280,6 @@ function onSidebarPointerDown(e, def) {
     const x = Math.max(0, canvasWrap.scrollLeft + rect.width  / 2 - 43);
     const y = Math.max(0, canvasWrap.scrollTop  + rect.height / 2 - 48);
     state.socket.emit('element:spawn', { elementId: def.id, x, y });
-    closeMobileSidebar();
     return;
   }
 
