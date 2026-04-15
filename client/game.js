@@ -32,7 +32,11 @@ const state = {
   compTimerInterval: null,
 
   // Hints mode
-  hintsEnabled: false,
+  hintsEnabled:  false,
+
+  // Sidebar status
+  contributions:  {},   // elementId → resultIds[] (static, built on room join)
+  showExhausted:  true, // show exhausted elements by default
 
   // Active category filter
   activeCategory: '',
@@ -64,7 +68,8 @@ const app             = $('app');
 const roomCodeDisplay = $('room-code-display');
 const membersList     = $('members-list');
 const discoveryCount  = $('discovery-count');
-const sidebarSearch   = $('sidebar-search');
+const sidebarSearch       = $('sidebar-search');
+const btnShowExhausted    = $('btn-show-exhausted');
 const sidebarEl       = $('sidebar-elements');
 const categoryTabs    = $('category-tabs');
 const canvas          = $('canvas');
@@ -153,6 +158,7 @@ function connect() {
     addRecipeRow(elementDef.id);
     showToast(elementDef);
     playDiscovery();
+    updateSidebarStatuses();
     renderHints();
   });
 
@@ -232,7 +238,9 @@ function onRoomState(snap) {
     if (!state.allElements[e.id]?.isStarter) addRecipeRow(e.id);
   }
 
-  // Hints
+  // Element statuses + hints
+  buildContributions();
+  updateSidebarStatuses();
   applyHintsMode();
 
   // Canvas items
@@ -244,6 +252,39 @@ function onRoomState(snap) {
   canvasWrap.scrollLeft = 600;
   canvasWrap.scrollTop  = 400;
 }
+
+// ─── Element status (dead / exhausted / active) ───────────────────────────────
+function buildContributions() {
+  // elementId → array of resultIds where this element is used as input
+  state.contributions = {};
+  for (const [resultId, inputs] of Object.entries(state.recipes)) {
+    for (const inputId of new Set(inputs)) {
+      (state.contributions[inputId] ??= []).push(resultId);
+    }
+  }
+}
+
+function getCardStatus(elementId) {
+  const results = state.contributions[elementId];
+  if (!results || results.length === 0) return 'dead';
+  if (results.every(r => state.discovered.has(r))) return 'exhausted';
+  return 'active';
+}
+
+function updateSidebarStatuses() {
+  for (const card of sidebarEl.querySelectorAll('.sidebar-card')) {
+    const status = getCardStatus(card.dataset.id);
+    card.classList.toggle('dead',      status === 'dead');
+    card.classList.toggle('exhausted', status === 'exhausted');
+  }
+  filterSidebar(sidebarSearch.value);
+}
+
+btnShowExhausted.addEventListener('click', () => {
+  state.showExhausted = !state.showExhausted;
+  btnShowExhausted.classList.toggle('active', state.showExhausted);
+  filterSidebar(sidebarSearch.value);
+});
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function addSidebarCard(def) {
@@ -267,9 +308,10 @@ function filterSidebar(query) {
   const cat = state.activeCategory;
   for (const card of sidebarEl.querySelectorAll('.sidebar-card')) {
     const name = card.querySelector('.card-name').textContent.toLowerCase();
-    const matchQ = !q || name.includes(q);
+    const matchQ   = !q || name.includes(q);
     const matchCat = !cat || card.dataset.cat === cat;
-    card.style.display = (matchQ && matchCat) ? '' : 'none';
+    const isExhausted = card.classList.contains('exhausted');
+    card.style.display = (matchQ && matchCat && (!isExhausted || state.showExhausted)) ? '' : 'none';
   }
 }
 

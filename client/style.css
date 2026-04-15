@@ -178,14 +178,52 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
 }
 
-.sidebar-search { padding: 10px; }
+.sidebar-search { padding: 10px; display: flex; gap: 6px; align-items: center; }
 .sidebar-search input {
-  width: 100%; padding: 7px 10px;
+  flex: 1; padding: 7px 10px;
   border-radius: 7px; border: 1px solid var(--bg3);
   background: var(--bg); color: var(--text);
   font-size: .85rem; outline: none;
 }
 .sidebar-search input:focus { border-color: var(--accent); }
+
+/* Exhausted filter toggle */
+.btn-filter-exhausted {
+  flex-shrink: 0;
+  background: rgba(100,200,100,.15);
+  border: 1px solid rgba(100,200,100,.35);
+  color: rgba(100,200,100,.9);
+  border-radius: 6px;
+  font-size: .75rem; font-weight: 700;
+  padding: 5px 7px; cursor: pointer;
+  transition: opacity .15s;
+  line-height: 1;
+}
+.btn-filter-exhausted:not(.active) {
+  opacity: .4;
+  background: none;
+  border-color: rgba(255,255,255,.1);
+  color: var(--text2);
+}
+
+/* Dead element: no recipes at all */
+.sidebar-card.dead::after {
+  content: '∅';
+  position: absolute; top: 3px; right: 5px;
+  font-size: .6rem; line-height: 1;
+  color: rgba(255,100,100,.65);
+}
+
+/* Exhausted element: has recipes but all already discovered */
+.sidebar-card.exhausted {
+  opacity: .45;
+}
+.sidebar-card.exhausted::after {
+  content: '✓';
+  position: absolute; top: 3px; right: 5px;
+  font-size: .6rem; line-height: 1;
+  color: rgba(100,220,100,.8);
+}
 
 .sidebar-elements {
   flex: 1; overflow-y: auto;
