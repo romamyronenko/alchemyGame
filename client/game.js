@@ -634,12 +634,30 @@ function showToast(def) {
 }
 
 // ─── Header buttons ───────────────────────────────────────────────────────────
-btnCopyCode.addEventListener('click', () => {
-  if (!state.roomCode) return;
-  navigator.clipboard.writeText(state.roomCode).then(() => {
+function copyToClipboard(text) {
+  const done = () => {
     btnCopyCode.textContent = '✅';
     setTimeout(() => { btnCopyCode.textContent = '📋'; }, 1500);
-  });
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(done).catch(() => execCopy(text, done));
+  } else {
+    execCopy(text, done);
+  }
+}
+
+function execCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try { document.execCommand('copy'); cb(); } catch (_) {}
+  ta.remove();
+}
+
+btnCopyCode.addEventListener('click', () => {
+  if (state.roomCode) copyToClipboard(state.roomCode);
 });
 
 btnClear.addEventListener('click', () => {
