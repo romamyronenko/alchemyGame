@@ -57,6 +57,9 @@ const sidebarEl       = $('sidebar-elements');
 const categoryTabs    = $('category-tabs');
 const canvas          = $('canvas');
 const canvasWrap      = $('canvas-wrap');
+const sidebarContainer  = document.querySelector('.sidebar');
+const sidebarOverlay    = $('sidebar-overlay');
+const btnSidebarToggle  = $('btn-sidebar-toggle');
 const toast           = $('discovery-toast');
 const recipesPanel    = $('recipes-panel');
 const recipesList     = $('recipes-list');
@@ -266,10 +269,20 @@ function removeGhost() {
   if (ghost) { ghost.remove(); ghost = null; }
 }
 
-// From sidebar — creates a ghost, spawns on drop over canvas
+// From sidebar — on touch: tap to spawn at canvas center; on mouse: ghost drag
 function onSidebarPointerDown(e, def) {
   if (e.button !== 0) return;
   e.preventDefault();
+
+  if (e.pointerType === 'touch') {
+    // Tap-to-spawn: place at center of visible canvas viewport
+    const rect = canvasWrap.getBoundingClientRect();
+    const x = Math.max(0, canvasWrap.scrollLeft + rect.width  / 2 - 43);
+    const y = Math.max(0, canvasWrap.scrollTop  + rect.height / 2 - 48);
+    state.socket.emit('element:spawn', { elementId: def.id, x, y });
+    closeMobileSidebar();
+    return;
+  }
 
   ghost = createGhost(def);
   moveGhost(e);
@@ -531,6 +544,24 @@ btnJoin.addEventListener('click', () => {
 nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnCreate.click(); });
 codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnJoin.click(); });
 codeInput.addEventListener('input', () => { codeInput.value = codeInput.value.toUpperCase(); });
+
+// ─── Mobile sidebar ───────────────────────────────────────────────────────────
+function openMobileSidebar() {
+  sidebarContainer.classList.add('mobile-open');
+  sidebarOverlay.classList.add('visible');
+}
+
+function closeMobileSidebar() {
+  sidebarContainer.classList.remove('mobile-open');
+  sidebarOverlay.classList.remove('visible');
+}
+
+btnSidebarToggle.addEventListener('click', () => {
+  if (sidebarContainer.classList.contains('mobile-open')) closeMobileSidebar();
+  else openMobileSidebar();
+});
+
+sidebarOverlay.addEventListener('click', closeMobileSidebar);
 
 // ─── Particle effects ─────────────────────────────────────────────────────────
 const TIER_COLORS = ['#f9c23c', '#4ecdc4', '#a855f7', '#e94560'];

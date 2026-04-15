@@ -52,7 +52,7 @@ function roomSnapshot(room) {
     discovered:  [...room.discoveredIds].map(id => elementMap.get(id)).filter(Boolean),
     canvas:      [...room.canvas.values()],
     members:     [...room.members.entries()].map(([sid, m]) => ({ socketId: sid, ...m })),
-    allElements: ELEMENTS.map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter, icon: elementMap.get(e.id)?.icon })),
+    allElements: ELEMENTS.map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter, icon: elementMap.get(e.id)?.icon, category: e.category })),
     // recipe lookup: elementId → sorted input ids
     recipes: Object.fromEntries(reverseRecipeMap),
   };
