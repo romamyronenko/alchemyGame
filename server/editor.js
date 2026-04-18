@@ -244,25 +244,21 @@ function removePack(packId) {
   return packId;
 }
 
-// Build temporary Maps for a specific pack (called at room creation)
-// Returns { recipeMap, reverseMap, elements }
+// Build temporary Maps for a specific pack (called at room creation).
+// Returns { recipeMap, reverseMap, elements, starterIds }
+// elements contains ONLY reachable elements (BFS from starters through pack recipes).
 function buildPackMaps(packId) {
   const pack = editorData.packs[packId];
   if (!pack) return null;
 
-  // Elements: base + pack custom, with pack icon overrides
-  const elements = [];
-  const seenIds = new Set();
+  // Full element pool: base + pack custom, with pack icon overrides
+  const allElMap = new Map();
   for (const [id, def] of baseElementEntries) {
     const icon = (pack.icons || {})[id] || def.icon;
-    elements.push({ ...def, icon });
-    seenIds.add(id);
+    allElMap.set(id, { ...def, icon });
   }
   for (const el of (pack.elementsAdd || [])) {
-    if (!seenIds.has(el.id)) {
-      elements.push({ ...el });
-      seenIds.add(el.id);
-    }
+    if (!allElMap.has(el.id)) allElMap.set(el.id, { ...el });
   }
 
   // Recipes: only pack recipes
@@ -274,7 +270,27 @@ function buildPackMaps(packId) {
     if (!revMap.has(r.output)) revMap.set(r.output, [...r.inputs].sort());
   }
 
-  return { recipeMap: rMap, reverseMap: revMap, elements };
+  // Resolve starter IDs
+  const starterIds = (pack.starterIds && pack.starterIds.length)
+    ? pack.starterIds.filter(id => allElMap.has(id))
+    : [...allElMap.values()].filter(e => e.isStarter).map(e => e.id);
+
+  // BFS: compute reachable elements from starters through pack recipes
+  const reachable = new Set(starterIds);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const r of (pack.recipes || [])) {
+      if (!reachable.has(r.output) && r.inputs.every(id => reachable.has(id))) {
+        reachable.add(r.output);
+        changed = true;
+      }
+    }
+  }
+
+  const elements = [...reachable].map(id => allElMap.get(id)).filter(Boolean);
+
+  return { recipeMap: rMap, reverseMap: revMap, elements, starterIds };
 }
 
 // ── Pack recipes ──
@@ -353,6 +369,20 @@ function removePackElement(packId, elId) {
   return elId;
 }
 
+// ── Pack import ──
+function importPack(packId, packDef) {
+  if (!editorData.packs[packId]) throw new Error(`Pack not found: ${packId}`);
+  if (typeof packDef !== 'object' || packDef === null) throw new Error('Invalid pack data');
+  editorData.packs[packId] = {
+    name:        packDef.name        || editorData.packs[packId].name,
+    recipes:     packDef.recipes     || [],
+    icons:       packDef.icons       || {},
+    elementsAdd: packDef.elementsAdd || [],
+    starterIds:  packDef.starterIds  || [],
+  };
+  save();
+}
+
 // ── Pack starters ──
 function setPackStarters(packId, starterIds) {
   const pack = getPack(packId);
@@ -378,7 +408,7 @@ module.exports = {
   setIcon, removeIcon,
   addElement, removeElement,
   addRecipe, removeRecipe,
-  getPackList, addPack, removePack, buildPackMaps,
+  getPackList, addPack, removePack, buildPackMaps, importPack,
   addPackRecipe, removePackRecipe,
   setPackIcon, removePackIcon,
   addPackElement, removePackElement,

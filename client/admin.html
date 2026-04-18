@@ -394,6 +394,9 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
   </div>
 </div>
 
+<!-- Hidden input for per-pack import -->
+<input type="file" id="pack-import-file" accept="application/json,.json" style="display:none">
+
 <!-- PACK STARTERS MODAL -->
 <div class="modal-overlay hidden" id="starters-modal">
   <div class="modal-box" style="width:420px">
@@ -417,6 +420,7 @@ let currentPackId = null;    // null = base game
 let currentPackData = null;  // { recipes, icons, elementsAdd, starterIds }
 let uploadTargetId = null, uploadDataUri = null;
 let startersPackId = null;
+let packImportTargetId = null;
 
 // ── Status flash ───────────────────────────────────────────────────────────────
 let statusTimer;
@@ -996,7 +1000,8 @@ function renderPacksTable() {
         <div class="pack-row-actions">
           <button class="btn-ghost btn-sm pack-select-btn" data-id="${p.id}">Редагувати</button>
           <button class="btn-ghost btn-sm pack-starters-btn" data-id="${p.id}">Стартери</button>
-          <button class="btn-ghost btn-sm pack-export-btn" data-id="${p.id}">⬇</button>
+          <button class="btn-ghost btn-sm pack-export-btn" data-id="${p.id}" title="Скачати JSON паку">⬇ Експорт</button>
+          <button class="btn-ghost btn-sm pack-import-btn" data-id="${p.id}" title="Завантажити JSON паку">⬆ Імпорт</button>
           <button class="btn-danger btn-sm pack-del-btn" data-id="${p.id}">Видалити</button>
         </div>
       </td>
@@ -1007,7 +1012,6 @@ function renderPacksTable() {
     btn.addEventListener('click', () => {
       document.getElementById('global-pack-sel').value = btn.dataset.id;
       document.getElementById('global-pack-sel').dispatchEvent(new Event('change'));
-      // Switch to icons tab
       document.querySelector('.tab[data-tab="icons"]').click();
     });
   });
@@ -1016,6 +1020,12 @@ function renderPacksTable() {
   });
   tbody.querySelectorAll('.pack-export-btn').forEach(btn => {
     btn.addEventListener('click', () => exportPack(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.pack-import-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      packImportTargetId = btn.dataset.id;
+      document.getElementById('pack-import-file').click();
+    });
   });
   tbody.querySelectorAll('.pack-del-btn').forEach(btn => {
     btn.addEventListener('click', () => deletePack(btn.dataset.id));
@@ -1123,6 +1133,33 @@ document.getElementById('btn-starters-cancel').addEventListener('click', () => {
 });
 document.getElementById('starters-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) document.getElementById('starters-modal').classList.add('hidden');
+});
+
+// ── Per-pack import ───────────────────────────────────────────────────────────
+document.getElementById('pack-import-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || !packImportTargetId) return;
+  const p = allPacks.find(x => x.id === packImportTargetId);
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!confirm(`Замінити вміст паку «${p?.name || packImportTargetId}» даними з файлу?`)) return;
+    const res = await fetch(`/api/admin/pack/${packImportTargetId}/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    // If this pack is currently selected, refresh its data
+    if (currentPackId === packImportTargetId) {
+      currentPackData = data;
+    }
+    showStatus(`Пак «${p?.name || packImportTargetId}» імпортовано ✓`);
+    await refreshPackCounts();
+    renderIconGrid(); renderRecipesTable(); renderElementsTable();
+  } catch(e) { showStatus('Помилка імпорту: ' + e.message, false); }
 });
 
 // ── Export / Import / Reset ───────────────────────────────────────────────────

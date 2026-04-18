@@ -183,6 +183,11 @@ app.put('/api/admin/pack/:id/starters', adminAuth, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+app.post('/api/admin/pack/:id/import', adminAuth, (req, res) => {
+  try { editor.importPack(req.params.id, req.body); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ─── In-memory room state ─────────────────────────────────────────────────────
 // rooms: Map<code, Room>
 // Room = {
@@ -377,24 +382,12 @@ io.on('connection', (socket) => {
     const code = generateCode();
     db.createRoom(code);
 
-    const packMaps = packId ? editor.buildPackMaps(packId) : null;
-    const packElements = packMaps?.elements || null;
-    const packReverseMap = packMaps?.reverseMap || null;
-    const packRecipeMap  = packMaps?.recipeMap  || null;
-
-    // Determine starters: from pack starterIds, or pack elements marked isStarter, or global defaults
-    let starterIds;
-    if (packId && packMaps) {
-      const edData  = editor.getEditorData();
-      const packDef = edData.packs[packId];
-      if (packDef?.starterIds?.length) {
-        starterIds = packDef.starterIds;
-      } else {
-        starterIds = packElements.filter(e => e.isStarter).map(e => e.id);
-      }
-    } else {
-      starterIds = [...elementMap.values()].filter(e => e.isStarter).map(e => e.id);
-    }
+    const packMaps       = packId ? editor.buildPackMaps(packId) : null;
+    const packElements   = packMaps?.elements   || null;
+    const packReverseMap = packMaps?.reverseMap  || null;
+    const packRecipeMap  = packMaps?.recipeMap   || null;
+    const starterIds     = packMaps?.starterIds
+      ?? [...elementMap.values()].filter(e => e.isStarter).map(e => e.id);
 
     const room = {
       code,
