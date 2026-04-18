@@ -5,7 +5,7 @@ const path = require('path');
 
 const EDITOR_PATH = path.resolve(process.env.EDITOR_PATH || './server/data/editor.json');
 
-let editorData = { icons: {}, recipesAdd: [], recipesRemove: [] };
+let editorData = { icons: {}, recipesAdd: [], recipesRemove: [], elementsAdd: [] };
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 function save() {
@@ -32,9 +32,16 @@ function rebuildReverseMap(recipeMap, reverseRecipeMap) {
 function initEditor(elementMap, recipeMap, reverseRecipeMap) {
   try {
     const raw = fs.readFileSync(EDITOR_PATH, 'utf8');
-    editorData = { icons: {}, recipesAdd: [], recipesRemove: [], ...JSON.parse(raw) };
+    editorData = { icons: {}, recipesAdd: [], recipesRemove: [], elementsAdd: [], ...JSON.parse(raw) };
   } catch (_) {
     // File missing or invalid — start fresh
+  }
+
+  // Apply custom elements first (so icons/recipes can reference them)
+  for (const el of (editorData.elementsAdd || [])) {
+    if (!elementMap.has(el.id)) {
+      elementMap.set(el.id, { ...el });
+    }
   }
 
   // Apply custom icons
@@ -57,7 +64,8 @@ function initEditor(elementMap, recipeMap, reverseRecipeMap) {
   // Rebuild reverse map from effective recipeMap
   rebuildReverseMap(recipeMap, reverseRecipeMap);
 
-  console.log(`[editor] loaded: ${Object.keys(editorData.icons).length} custom icons, ` +
+  console.log(`[editor] loaded: ${(editorData.elementsAdd || []).length} custom elements, ` +
+    `${Object.keys(editorData.icons).length} custom icons, ` +
     `${editorData.recipesAdd.length} added recipes, ${editorData.recipesRemove.length} removed recipes`);
 }
 
@@ -82,6 +90,54 @@ function removeIcon(id, elementMap, ICONS) {
   delete editorData.icons[id];
   save();
   return def;
+}
+
+// ─── Elements ─────────────────────────────────────────────────────────────────
+const VALID_CATEGORIES = ['nature','materials','flora','civilization','technology','magic','food','fauna','other'];
+
+function addElement(def, elementMap) {
+  const { id, name, tier, category, isStarter, icon } = def || {};
+
+  if (!id || !/^[a-z0-9_]+$/.test(id))
+    throw new Error('ID must contain only lowercase letters, digits, underscores');
+  if (elementMap.has(id))
+    throw new Error(`Element already exists: ${id}`);
+  if (!name || !name.trim())
+    throw new Error('Name is required');
+  const tierNum = Number(tier);
+  if (!Number.isInteger(tierNum) || tierNum < 1 || tierNum > 5)
+    throw new Error('Tier must be 1–5');
+  if (!VALID_CATEGORIES.includes(category))
+    throw new Error(`Unknown category: ${category}`);
+  if (!icon || !icon.startsWith('data:image/'))
+    throw new Error('Icon image is required');
+
+  const el = {
+    id,
+    name: name.trim(),
+    tier: tierNum,
+    category,
+    isStarter: !!isStarter,
+    icon,
+  };
+
+  elementMap.set(id, { ...el });
+  editorData.elementsAdd.push(el);
+  save();
+  return el;
+}
+
+function removeElement(id, elementMap) {
+  if (!elementMap.has(id)) return null;
+  // Only allow removing custom elements
+  const idx = editorData.elementsAdd.findIndex(el => el.id === id);
+  if (idx === -1) return null; // base element — refuse
+  editorData.elementsAdd.splice(idx, 1);
+  elementMap.delete(id);
+  // Also clean up its custom icon entry if any
+  delete editorData.icons[id];
+  save();
+  return id;
 }
 
 // ─── Recipes ──────────────────────────────────────────────────────────────────
@@ -145,7 +201,8 @@ function getEditorData() {
     icons:          { ...editorData.icons },
     recipesAdd:     [...editorData.recipesAdd],
     recipesRemove:  [...editorData.recipesRemove],
+    elementsAdd:    [...(editorData.elementsAdd || [])],
   };
 }
 
-module.exports = { initEditor, setIcon, removeIcon, addRecipe, removeRecipe, getEditorData, save };
+module.exports = { initEditor, setIcon, removeIcon, addElement, removeElement, addRecipe, removeRecipe, getEditorData, save };

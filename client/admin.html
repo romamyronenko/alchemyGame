@@ -192,6 +192,7 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
 <nav class="tabs">
   <button class="tab active" data-tab="icons">Іконки (<span id="icons-count">…</span>)</button>
   <button class="tab" data-tab="recipes">Рецепти (<span id="recipe-count">…</span>)</button>
+  <button class="tab" data-tab="elements">Елементи (<span id="elements-count">0</span>)</button>
 </nav>
 
 <!-- ICONS TAB -->
@@ -241,6 +242,75 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
       </tr>
     </thead>
     <tbody id="recipes-tbody"></tbody>
+  </table>
+</section>
+
+<!-- ELEMENTS TAB -->
+<section id="tab-elements" class="tab-content">
+  <div class="toolbar">
+    <button class="btn-primary" id="btn-add-element">+ Новий елемент</button>
+  </div>
+
+  <div class="add-recipe-form hidden" id="add-element-form">
+    <h3>Новий елемент</h3>
+    <div class="form-row">
+      <label>ID (лише a–z, 0–9, _)</label>
+      <input type="text" id="el-id" placeholder="my_element" pattern="[a-z0-9_]+" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:.85rem;width:100%">
+    </div>
+    <div class="form-row">
+      <label>Назва</label>
+      <input type="text" id="el-name" placeholder="Моя назва" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:.85rem;width:100%">
+    </div>
+    <div class="form-row" style="display:flex;gap:12px">
+      <div style="flex:1">
+        <label>Тір (1–5)</label>
+        <input type="number" id="el-tier" min="1" max="5" value="3" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:.85rem;width:100%">
+      </div>
+      <div style="flex:2">
+        <label>Категорія</label>
+        <select id="el-category" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:.85rem;width:100%">
+          <option value="nature">Природа</option>
+          <option value="materials">Матеріали</option>
+          <option value="flora">Флора</option>
+          <option value="civilization">Цивілізація</option>
+          <option value="technology">Технології</option>
+          <option value="magic">Магія</option>
+          <option value="food">Їжа</option>
+          <option value="fauna">Фауна</option>
+          <option value="other">Інше</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label><input type="checkbox" id="el-starter"> Стартовий елемент (відкрито з початку)</label>
+    </div>
+    <div class="form-row">
+      <label>Іконка (обов'язково)</label>
+      <div class="upload-area" id="el-upload-area" style="margin-top:6px">
+        <div>Клікни або перетягни зображення</div>
+        <div style="font-size:.75rem;margin-top:4px">PNG, JPG, GIF, WEBP</div>
+        <input type="file" id="el-upload-file" accept="image/png,image/jpeg,image/gif,image/webp">
+        <img id="el-icon-preview" style="max-width:80px;max-height:80px;border-radius:6px;display:none;margin:8px auto 0">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" id="btn-save-element">Зберегти елемент</button>
+      <button class="btn-ghost"   id="btn-cancel-element">Скасувати</button>
+    </div>
+  </div>
+
+  <table id="elements-table" style="margin-top:16px">
+    <thead>
+      <tr>
+        <th>Іконка</th>
+        <th>ID</th>
+        <th>Назва</th>
+        <th>Тір</th>
+        <th>Категорія</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="elements-tbody"></tbody>
   </table>
 </section>
 
@@ -294,6 +364,7 @@ async function init() {
     document.getElementById('recipe-count').textContent = allRecipes.length;
     renderIconGrid();
     renderRecipesTable();
+    renderElementsTable();
     populateSelects();
   } catch(e) {
     showStatus('Помилка завантаження: ' + e.message, false);
@@ -578,6 +649,120 @@ document.getElementById('btn-save-recipe').addEventListener('click', async () =>
   } catch(e) {
     showStatus('Помилка: ' + e.message, false);
   }
+});
+
+// ── Elements ──────────────────────────────────────────────────────────────────
+let elIconDataUri = null;
+
+function renderElementsTable() {
+  const custom = allElements.filter(e => e.isCustomElement);
+  document.getElementById('elements-count').textContent = custom.length;
+  const tbody = document.getElementById('elements-tbody');
+  tbody.innerHTML = '';
+  for (const e of custom) {
+    const tr = document.createElement('tr');
+    const iconHtml = e.icon
+      ? (e.icon.startsWith('data:')
+          ? `<img src="${e.icon}" style="width:32px;height:32px;object-fit:contain">`
+          : e.icon)
+      : '—';
+    tr.innerHTML = `
+      <td><div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center">${iconHtml}</div></td>
+      <td><code>${e.id}</code></td>
+      <td>${e.name}</td>
+      <td>${e.tier}</td>
+      <td>${e.category}</td>
+      <td><button class="btn-danger btn-sm btn-del-el" data-id="${e.id}">Видалити</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('.btn-del-el').forEach(btn => {
+    btn.addEventListener('click', () => deleteElement(btn.dataset.id));
+  });
+}
+
+async function deleteElement(id) {
+  const e = elementById[id];
+  if (!confirm(`Видалити елемент "${e?.name || id}"? Рецепти що його використовують перестануть працювати.`)) return;
+  try {
+    const res = await fetch(`/api/admin/element/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    allElements = allElements.filter(e => e.id !== id);
+    delete elementById[id];
+    populateSelects();
+    renderElementsTable();
+    showStatus('Елемент видалено ✓');
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
+}
+
+document.getElementById('btn-add-element').addEventListener('click', () => {
+  document.getElementById('add-element-form').classList.toggle('hidden');
+});
+
+document.getElementById('btn-cancel-element').addEventListener('click', () => {
+  document.getElementById('add-element-form').classList.add('hidden');
+  document.getElementById('el-id').value = '';
+  document.getElementById('el-name').value = '';
+  document.getElementById('el-tier').value = '3';
+  document.getElementById('el-starter').checked = false;
+  elIconDataUri = null;
+  document.getElementById('el-icon-preview').style.display = 'none';
+});
+
+document.getElementById('el-upload-area').addEventListener('click', () => {
+  document.getElementById('el-upload-file').click();
+});
+document.getElementById('el-upload-area').addEventListener('dragover', e => e.preventDefault());
+document.getElementById('el-upload-area').addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) handleElFile(file);
+});
+document.getElementById('el-upload-file').addEventListener('change', e => {
+  if (e.target.files[0]) handleElFile(e.target.files[0]);
+});
+
+function handleElFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    elIconDataUri = ev.target.result;
+    const preview = document.getElementById('el-icon-preview');
+    preview.src = elIconDataUri;
+    preview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+document.getElementById('btn-save-element').addEventListener('click', async () => {
+  const id       = document.getElementById('el-id').value.trim();
+  const name     = document.getElementById('el-name').value.trim();
+  const tier     = Number(document.getElementById('el-tier').value);
+  const category = document.getElementById('el-category').value;
+  const isStarter = document.getElementById('el-starter').checked;
+
+  if (!id)          return showStatus('Введи ID', false);
+  if (!name)        return showStatus('Введи назву', false);
+  if (!elIconDataUri) return showStatus('Завантаж іконку', false);
+
+  try {
+    const res = await fetch('/api/admin/element', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name, tier, category, isStarter, icon: elIconDataUri }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+
+    const newEl = { id, name, tier, category, isStarter, icon: elIconDataUri,
+                    isCustomIcon: false, isCustomElement: true };
+    allElements.push(newEl);
+    elementById[id] = newEl;
+    populateSelects();
+    renderElementsTable();
+    document.getElementById('btn-cancel-element').click();
+    showStatus('Елемент додано ✓');
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

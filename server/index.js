@@ -45,12 +45,13 @@ app.get('/admin', adminAuth, (_, res) => res.sendFile(path.join(__dirname, '../c
 
 // ─── Admin API ────────────────────────────────────────────────────────────────
 app.get('/api/admin/data', adminAuth, (_, res) => {
-  const { icons, recipesAdd, recipesRemove } = editor.getEditorData();
+  const { icons, recipesAdd, recipesRemove, elementsAdd } = editor.getEditorData();
   res.json({
-    elements: ELEMENTS.map(e => ({
+    elements: [...elementMap.values()].map(e => ({
       id: e.id, name: e.name, tier: e.tier, category: e.category,
-      icon: elementMap.get(e.id)?.icon,
+      icon: e.icon,
       isCustomIcon: !!icons[e.id],
+      isCustomElement: elementsAdd.some(el => el.id === e.id),
     })),
     recipes: [...recipeMap.entries()].map(([key, output]) => ({
       key, inputs: key.split('+'), output,
@@ -59,6 +60,19 @@ app.get('/api/admin/data', adminAuth, (_, res) => {
     })),
     recipesRemove,
   });
+});
+
+app.post('/api/admin/element', adminAuth, (req, res) => {
+  try {
+    const el = editor.addElement(req.body, elementMap);
+    res.json({ ok: true, id: el.id });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/element/:id', adminAuth, (req, res) => {
+  const removed = editor.removeElement(req.params.id, elementMap);
+  if (!removed) return res.status(404).json({ error: 'Element not found or is a base element' });
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/icon', adminAuth, (req, res) => {
@@ -121,7 +135,7 @@ function roomSnapshot(room) {
     members:      [...room.members.entries()].map(([sid, m]) => ({ socketId: sid, ...m })),
     hostSocketId: room.hostSocketId,
     hintsEnabled: room.hintsEnabled || false,
-    allElements:  ELEMENTS.map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter, icon: elementMap.get(e.id)?.icon, category: e.category })),
+    allElements:  [...elementMap.values()].map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter || false, icon: e.icon, category: e.category })),
     recipes:      Object.fromEntries(reverseRecipeMap),
   };
 }
@@ -183,9 +197,9 @@ function pickCompetitionStarters(count) {
   return [...selected];
 }
 
-const ALL_EL_DEFS = () => ELEMENTS.map(e => ({
-  id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter,
-  icon: elementMap.get(e.id)?.icon, category: e.category,
+const ALL_EL_DEFS = () => [...elementMap.values()].map(e => ({
+  id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter || false,
+  icon: e.icon, category: e.category,
 }));
 
 function compRoomSnapshot(room) {
@@ -287,7 +301,7 @@ io.on('connection', (socket) => {
       hostSocketId:  socket.id,
       hintsEnabled:  false,
       members:       new Map([[socket.id, { nickname, color: nextColor() }]]),
-      discoveredIds: new Set(ELEMENTS.filter(e => e.isStarter).map(e => e.id)),
+      discoveredIds: new Set([...elementMap.values()].filter(e => e.isStarter).map(e => e.id)),
       canvas:        new Map(),
     };
     // Save starter discoveries
