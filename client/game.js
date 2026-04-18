@@ -108,6 +108,19 @@ const recipesPanel    = $('recipes-panel');
 const recipesList     = $('recipes-list');
 const recipesSearch   = $('recipes-search');
 
+// ─── Pack selector ────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    const packs = await fetch('/api/packs').then(r => r.json());
+    const sel   = $('pack-select');
+    if (!sel) return;
+    if (packs.length === 0) return; // no packs — keep hidden
+    sel.innerHTML = '<option value="">— Базова гра —</option>' +
+      packs.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    sel.style.display = '';
+  } catch (_) { /* ignore — server may not have packs */ }
+})();
+
 // ─── Socket setup ─────────────────────────────────────────────────────────────
 function connect() {
   state.socket = io();
@@ -697,7 +710,9 @@ function getNickname() {
 btnCreate.addEventListener('click', () => {
   const nickname = getNickname();
   if (!nickname) return;
-  state.socket.emit('room:create', { nickname });
+  const packSel = document.getElementById('pack-select');
+  const packId  = packSel?.value || null;
+  state.socket.emit('room:create', { nickname, packId: packId || null });
 });
 
 btnJoin.addEventListener('click', () => {

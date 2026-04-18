@@ -124,6 +124,65 @@ app.post('/api/admin/reset', adminAuth, (_, res) => {
   res.json({ ok: true });
 });
 
+// ─── Public pack list (no auth — needed in room creation UI) ─────────────────
+app.get('/api/packs', (_, res) => {
+  res.json(editor.getPackList());
+});
+
+// ─── Admin pack API ───────────────────────────────────────────────────────────
+app.get('/api/admin/packs', adminAuth, (_, res) => {
+  res.json(editor.getPackList());
+});
+
+app.post('/api/admin/pack', adminAuth, (req, res) => {
+  try { res.json(editor.addPack(req.body)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/pack/:id', adminAuth, (req, res) => {
+  const removed = editor.removePack(req.params.id);
+  if (!removed) return res.status(404).json({ error: 'Pack not found' });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/pack/:id/recipe', adminAuth, (req, res) => {
+  try { res.json(editor.addPackRecipe(req.params.id, req.body.inputs, req.body.output)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/pack/:id/recipe', adminAuth, (req, res) => {
+  const removed = editor.removePackRecipe(req.params.id, req.body?.key);
+  if (!removed) return res.status(404).json({ error: 'Recipe not found in pack' });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/pack/:id/icon', adminAuth, (req, res) => {
+  try { res.json({ ok: true, elId: editor.setPackIcon(req.params.id, req.body.elId, req.body.data) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/pack/:id/icon/:elId', adminAuth, (req, res) => {
+  const removed = editor.removePackIcon(req.params.id, req.params.elId);
+  if (!removed) return res.status(404).json({ error: 'Icon not found in pack' });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/pack/:id/element', adminAuth, (req, res) => {
+  try { res.json(editor.addPackElement(req.params.id, req.body)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/pack/:id/element/:elId', adminAuth, (req, res) => {
+  const removed = editor.removePackElement(req.params.id, req.params.elId);
+  if (!removed) return res.status(404).json({ error: 'Element not found in pack' });
+  res.json({ ok: true });
+});
+
+app.put('/api/admin/pack/:id/starters', adminAuth, (req, res) => {
+  try { res.json({ ok: true, starterIds: editor.setPackStarters(req.params.id, req.body.starterIds) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ─── In-memory room state ─────────────────────────────────────────────────────
 // rooms: Map<code, Room>
 // Room = {
@@ -147,15 +206,18 @@ function generateCode() {
 }
 
 function roomSnapshot(room) {
+  const els    = room.packElements || [...elementMap.values()];
+  const elMap  = room.packElements ? new Map(room.packElements.map(e => [e.id, e])) : elementMap;
   return {
     code:         room.code,
-    discovered:   [...room.discoveredIds].map(id => elementMap.get(id)).filter(Boolean),
+    packId:       room.packId || null,
+    discovered:   [...room.discoveredIds].map(id => elMap.get(id)).filter(Boolean),
     canvas:       [...room.canvas.values()],
     members:      [...room.members.entries()].map(([sid, m]) => ({ socketId: sid, ...m })),
     hostSocketId: room.hostSocketId,
     hintsEnabled: room.hintsEnabled || false,
-    allElements:  [...elementMap.values()].map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter || false, icon: e.icon, category: e.category })),
-    recipes:      Object.fromEntries(reverseRecipeMap),
+    allElements:  els.map(e => ({ id: e.id, name: e.name, tier: e.tier, isStarter: e.isStarter || false, icon: e.icon, category: e.category })),
+    recipes:      Object.fromEntries(room.packReverseMap || reverseRecipeMap),
   };
 }
 
@@ -288,16 +350,16 @@ function combinations(arr, k) {
   ];
 }
 
-function tryRecipe(tokens) {
+function tryRecipe(tokens, rMap) {
   // Exact match
   const key = tokens.map(t => t.elementId).sort().join('+');
-  if (recipeMap.has(key)) return { output: recipeMap.get(key), used: tokens };
+  if (rMap.has(key)) return { output: rMap.get(key), used: tokens };
 
   // Subset match — smallest first
   for (let size = 2; size < tokens.length; size++) {
     for (const subset of combinations(tokens, size)) {
       const subKey = subset.map(t => t.elementId).sort().join('+');
-      if (recipeMap.has(subKey)) return { output: recipeMap.get(subKey), used: subset };
+      if (rMap.has(subKey)) return { output: rMap.get(subKey), used: subset };
     }
   }
   return null;
@@ -311,16 +373,39 @@ io.on('connection', (socket) => {
   }
 
   // ── Create room ──
-  socket.on('room:create', ({ nickname }) => {
+  socket.on('room:create', ({ nickname, packId }) => {
     const code = generateCode();
     db.createRoom(code);
 
+    const packMaps = packId ? editor.buildPackMaps(packId) : null;
+    const packElements = packMaps?.elements || null;
+    const packReverseMap = packMaps?.reverseMap || null;
+    const packRecipeMap  = packMaps?.recipeMap  || null;
+
+    // Determine starters: from pack starterIds, or pack elements marked isStarter, or global defaults
+    let starterIds;
+    if (packId && packMaps) {
+      const edData  = editor.getEditorData();
+      const packDef = edData.packs[packId];
+      if (packDef?.starterIds?.length) {
+        starterIds = packDef.starterIds;
+      } else {
+        starterIds = packElements.filter(e => e.isStarter).map(e => e.id);
+      }
+    } else {
+      starterIds = [...elementMap.values()].filter(e => e.isStarter).map(e => e.id);
+    }
+
     const room = {
       code,
+      packId:          packId || null,
+      packRecipeMap,
+      packReverseMap,
+      packElements,
       hostSocketId:  socket.id,
       hintsEnabled:  false,
       members:       new Map([[socket.id, { nickname, color: nextColor() }]]),
-      discoveredIds: new Set([...elementMap.values()].filter(e => e.isStarter).map(e => e.id)),
+      discoveredIds: new Set(starterIds),
       canvas:        new Map(),
     };
     // Save starter discoveries
@@ -450,7 +535,7 @@ io.on('connection', (socket) => {
     }
 
     const candidates = [inst, ...overlapping];
-    const result = tryRecipe(candidates);
+    const result = tryRecipe(candidates, room.packRecipeMap || recipeMap);
 
     if (!result) {
       // Silent fail — broadcast position only
@@ -476,7 +561,10 @@ io.on('connection', (socket) => {
       db.saveDiscovery(room.code, result.output);
     }
 
-    const resultDef = elementMap.get(result.output);
+    const resultElMap = room.packElements
+      ? new Map(room.packElements.map(e => [e.id, e]))
+      : elementMap;
+    const resultDef = resultElMap.get(result.output);
     io.to(room.code).emit('combine:success', { consumed, result: { instance: newInstance, def: resultDef } });
 
     if (isNew) {
@@ -567,7 +655,7 @@ io.on('connection', (socket) => {
 
     if (!overlapping.length) { socket.emit('comp:moved', { instanceId, x, y }); return; }
 
-    const result = tryRecipe([inst, ...overlapping]);
+    const result = tryRecipe([inst, ...overlapping], room.packRecipeMap || recipeMap);
     if (!result) { socket.emit('comp:moved', { instanceId, x, y }); return; }
 
     const cx = Math.round(result.used.reduce((s, t) => s + t.x, 0) / result.used.length);
@@ -582,9 +670,12 @@ io.on('connection', (socket) => {
     const isNew     = !isStarter && !disc.has(result.output);
     if (isNew) { disc.add(result.output); room.playerRoundDiscoveries.set(socket.id, disc); }
 
+    const compElMap = room.packElements
+      ? new Map(room.packElements.map(e => [e.id, e]))
+      : elementMap;
     socket.emit('comp:combine:success', {
       consumed: result.used.map(t => t.instanceId),
-      result:   { instance: newInst, def: elementMap.get(result.output) },
+      result:   { instance: newInst, def: compElMap.get(result.output) },
       isNew,
     });
   });
