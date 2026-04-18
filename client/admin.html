@@ -57,18 +57,14 @@ header h1 { font-size: 1.2rem; font-weight: 700; }
 .tab-content { display: none; padding: 20px; }
 .tab-content.active { display: block; }
 
-/* ── Pack bar ── */
-#pack-bar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 20px;
-  background: var(--bg2); border-bottom: 1px solid var(--border);
-}
-#pack-bar select {
+/* ── Pack selector in header ── */
+#pack-selector-wrap { display: flex; align-items: center; gap: 8px; margin-left: 20px; }
+#pack-selector-wrap select {
   background: var(--bg3); border: 1px solid var(--border); color: var(--text);
   border-radius: 6px; padding: 5px 10px; font-size: .85rem;
 }
-#pack-bar label { font-size: .85rem; color: var(--text2); }
-#pack-context-note { font-size: .8rem; color: var(--text2); font-style: italic; }
+#pack-selector-wrap label { font-size: .85rem; color: var(--text2); white-space: nowrap; }
+#pack-context-note { font-size: .8rem; color: var(--text2); font-style: italic; white-space: nowrap; }
 
 /* ── Search / toolbar ── */
 .toolbar {
@@ -203,6 +199,13 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
 
 <header>
   <h1>⚗️ Alchemy Admin</h1>
+  <div id="pack-selector-wrap">
+    <label for="global-pack-sel">Пак:</label>
+    <select id="global-pack-sel">
+      <option value="">— Базова гра —</option>
+    </select>
+    <span id="pack-context-note"></span>
+  </div>
   <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
     <button class="btn-ghost btn-sm" id="btn-export">⬇ Експорт</button>
     <label class="btn-ghost btn-sm" style="cursor:pointer;padding:7px 14px;font-size:.85rem;font-weight:600;border-radius:6px;background:var(--bg3);color:var(--text)">
@@ -220,15 +223,6 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
   <button class="tab" data-tab="elements">Елементи (<span id="elements-count">0</span>)</button>
   <button class="tab" data-tab="packs">Паки (<span id="packs-count">0</span>)</button>
 </nav>
-
-<!-- Global pack selector — hidden on Паки tab -->
-<div id="pack-bar">
-  <label for="global-pack-sel">Пак:</label>
-  <select id="global-pack-sel">
-    <option value="">— Базова гра —</option>
-  </select>
-  <span id="pack-context-note"></span>
-</div>
 
 <!-- ICONS TAB -->
 <section id="tab-icons" class="tab-content active">
@@ -450,6 +444,8 @@ async function init() {
     renderElementsTable();
     populateSelects();
     await loadPacks();
+    // Re-render with pack context if one was restored from URL
+    if (currentPackData) { renderIconGrid(); renderRecipesTable(); renderElementsTable(); }
   } catch(e) {
     showStatus('Помилка завантаження: ' + e.message, false);
   }
@@ -462,8 +458,8 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    // Hide pack-bar on Паки tab (it has its own pack management)
-    document.getElementById('pack-bar').style.display =
+    // Hide pack selector on Паки tab (it has its own pack management)
+    document.getElementById('pack-selector-wrap').style.display =
       btn.dataset.tab === 'packs' ? 'none' : '';
   });
 });
@@ -476,15 +472,24 @@ async function loadPacks() {
   document.getElementById('packs-count').textContent = allPacks.length;
   renderPacksTable();
   rebuildPackSelector();
+  // If a pack was restored from URL, load its data
+  const sel = document.getElementById('global-pack-sel');
+  if (sel.value && !currentPackData) {
+    currentPackId = sel.value;
+    try {
+      const full = await fetch('/api/admin/export').then(r => r.json());
+      currentPackData = full.packs?.[currentPackId] || { recipesAdd:[], recipesRemove:[], icons:{}, elementsAdd:[], elementsRemove:[], starterIds:[] };
+    } catch(_) {}
+  }
 }
 
 function rebuildPackSelector() {
   const sel = document.getElementById('global-pack-sel');
-  const prev = sel.value;
+  const prev = sel.value || new URLSearchParams(location.search).get('pack') || '';
   sel.innerHTML = '<option value="">— Базова гра —</option>' +
     allPacks.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   // Restore previous selection if still exists
-  if (prev && allPacks.find(p => p.id === prev)) sel.value = prev;
+  if (prev && allPacks.find(p => p.id === prev)) { sel.value = prev; currentPackId = prev; }
   else { sel.value = ''; currentPackId = null; currentPackData = null; }
   updatePackContextNote();
 }
@@ -498,6 +503,12 @@ document.getElementById('global-pack-sel').addEventListener('change', async e =>
       currentPackData = full.packs?.[currentPackId] || { recipes:[], icons:{}, elementsAdd:[], starterIds:[] };
     } catch(_) { currentPackData = { recipes:[], icons:{}, elementsAdd:[], starterIds:[] }; }
   }
+  // Sync URL param
+  const url = new URL(location.href);
+  if (currentPackId) url.searchParams.set('pack', currentPackId);
+  else url.searchParams.delete('pack');
+  history.replaceState({}, '', url);
+
   updatePackContextNote();
   renderIconGrid();
   renderRecipesTable();
@@ -506,9 +517,22 @@ document.getElementById('global-pack-sel').addEventListener('change', async e =>
 
 function updatePackContextNote() {
   const note = document.getElementById('pack-context-note');
-  if (!currentPackId) { note.textContent = ''; return; }
-  const p = allPacks.find(x => x.id === currentPackId);
-  note.textContent = p ? `редагуєш пак «${p.name}»` : '';
+  if (!currentPackId) { note.textContent = ''; }
+  else {
+    const p = allPacks.find(x => x.id === currentPackId);
+    note.textContent = p ? `редагуєш «${p.name}»` : '';
+  }
+  updateResetBtn();
+}
+
+function updateResetBtn() {
+  const btn = document.getElementById('btn-reset');
+  if (currentPackId) {
+    const p = allPacks.find(x => x.id === currentPackId);
+    btn.textContent = `↺ Скинути пак «${p?.name || currentPackId}»`;
+  } else {
+    btn.textContent = '↺ Скинути';
+  }
 }
 
 // ── Icon grid ─────────────────────────────────────────────────────────────────
@@ -1412,15 +1436,31 @@ document.getElementById('import-file').addEventListener('change', async e => {
 });
 
 document.getElementById('btn-reset').addEventListener('click', async () => {
-  if (!confirm('Скинути ВСІ кастомні іконки, рецепти, елементи та паки до стандартних?')) return;
-  try {
-    const res = await fetch('/api/admin/reset', { method: 'POST' });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error);
-    currentPackId = null; currentPackData = null;
-    showStatus('Скинуто до стандартних ✓');
-    await init();
-  } catch(e) { showStatus('Помилка: ' + e.message, false); }
+  if (currentPackId) {
+    const p = allPacks.find(x => x.id === currentPackId);
+    if (!confirm(`Скинути пак «${p?.name || currentPackId}» до стандартних налаштувань?\n(всі зміни рецептів, елементів, іконок та стартерів цього паку будуть видалені)`)) return;
+    try {
+      const res = await fetch(`/api/admin/pack/${currentPackId}/reset`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      // Reload pack data
+      const full = await fetch('/api/admin/export').then(r => r.json());
+      currentPackData = full.packs?.[currentPackId] || { recipesAdd:[], recipesRemove:[], icons:{}, elementsAdd:[], elementsRemove:[], starterIds:[] };
+      renderIconGrid(); renderRecipesTable(); renderElementsTable();
+      await refreshPackCounts();
+      showStatus(`Пак «${p?.name || currentPackId}» скинуто до стандартних ✓`);
+    } catch(e) { showStatus('Помилка: ' + e.message, false); }
+  } else {
+    if (!confirm('Скинути ВСІ кастомні іконки, рецепти, елементи та паки до стандартних?')) return;
+    try {
+      const res = await fetch('/api/admin/reset', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      currentPackId = null; currentPackData = null;
+      showStatus('Скинуто до стандартних ✓');
+      await init();
+    } catch(e) { showStatus('Помилка: ' + e.message, false); }
+  }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

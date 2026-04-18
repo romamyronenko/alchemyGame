@@ -198,6 +198,12 @@ app.post('/api/admin/pack/:id/elements/restore', adminAuth, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// Reset pack to defaults
+app.post('/api/admin/pack/:id/reset', adminAuth, (req, res) => {
+  try { editor.resetPack(req.params.id); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // Bulk recipe remove/restore
 app.post('/api/admin/pack/:id/recipes/remove', adminAuth, (req, res) => {
   try {

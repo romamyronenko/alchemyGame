@@ -118,13 +118,33 @@ const recipesSearch   = $('recipes-search');
     sel.innerHTML = '<option value="">— Базова гра —</option>' +
       packs.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     sel.style.display = '';
+    // Restore pack from URL
+    const packFromUrl = new URLSearchParams(location.search).get('pack');
+    if (packFromUrl && packs.find(p => p.id === packFromUrl)) sel.value = packFromUrl;
   } catch (_) { /* ignore — server may not have packs */ }
 })();
+
+// ─── Pre-fill from URL / localStorage ─────────────────────────────────────────
+{
+  const savedNick = localStorage.getItem('alchemy_nickname');
+  if (savedNick) nicknameInput.value = savedNick;
+  const roomFromUrl = new URLSearchParams(location.search).get('room');
+  if (roomFromUrl) codeInput.value = roomFromUrl.toUpperCase();
+}
 
 // ─── Socket setup ─────────────────────────────────────────────────────────────
 function connect() {
   state.socket = io();
   const sock = state.socket;
+
+  // Auto-join if room code is in URL and nickname is known
+  sock.on('connect', () => {
+    const roomFromUrl = new URLSearchParams(location.search).get('room');
+    const savedNick   = localStorage.getItem('alchemy_nickname');
+    if (roomFromUrl && savedNick && !state.roomCode) {
+      sock.emit('room:join', { nickname: savedNick, code: roomFromUrl.toUpperCase() });
+    }
+  });
 
   sock.on('room:created', onRoomState);
   sock.on('room:joined',  snap => snap.isCompetition ? onCompRoomState(snap) : onRoomState(snap));
@@ -237,9 +257,18 @@ function onRoomState(snap) {
   // Register all element defs
   for (const e of snap.allElements) state.allElements[e.id] = e;
 
-  // Find my color
+  // Find my color / nickname
   const me = snap.members.find(m => m.socketId === state.socket.id);
-  if (me) { state.myColor = me.color; }
+  if (me) { state.myColor = me.color; state.myNickname = me.nickname; }
+  if (state.myNickname) localStorage.setItem('alchemy_nickname', state.myNickname);
+
+  // Push room code to URL
+  const url = new URL(location.href);
+  url.searchParams.set('room', snap.code);
+  const packSel = $('pack-select');
+  if (packSel?.value) url.searchParams.set('pack', packSel.value);
+  else url.searchParams.delete('pack');
+  history.replaceState({}, '', url);
 
   // Show app
   modalOverlay.classList.add('hidden');
@@ -824,7 +853,14 @@ function onCompRoomState(snap) {
   for (const e of snap.allElements) state.allElements[e.id] = e;
 
   const me = snap.members.find(m => m.socketId === state.socket.id);
-  if (me) state.myColor = me.color;
+  if (me) { state.myColor = me.color; state.myNickname = me.nickname; }
+  if (state.myNickname) localStorage.setItem('alchemy_nickname', state.myNickname);
+
+  // Push room code to URL
+  const url = new URL(location.href);
+  url.searchParams.set('room', snap.code);
+  url.searchParams.delete('pack'); // competition rooms don't use packs
+  history.replaceState({}, '', url);
 
   modalOverlay.classList.add('hidden');
   app.classList.remove('hidden');

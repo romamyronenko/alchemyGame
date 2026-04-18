@@ -536,6 +536,19 @@ function importPack(packId, packDef) {
   save();
 }
 
+// ── Pack reset ──
+function resetPack(packId) {
+  const pack = editorData.packs[packId];
+  if (!pack) throw new Error(`Pack not found: ${packId}`);
+  editorData.packs[packId] = {
+    name: pack.name,
+    recipesAdd: [], recipesRemove: [],
+    elementsAdd: [], elementsRemove: [],
+    icons: {}, starterIds: [],
+  };
+  save();
+}
+
 // ── Pack starters ──
 function setPackStarters(packId, starterIds) {
   const pack = getPack(packId);
@@ -557,7 +570,7 @@ function getEditorData() {
 }
 
 module.exports = {
-  initEditor, importData, resetToDefaults,
+  initEditor, importData, resetToDefaults, resetPack,
   setIcon, removeIcon,
   addElement, removeElement,
   addRecipe, removeRecipe,
