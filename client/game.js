@@ -263,12 +263,9 @@ function onRoomState(snap) {
   if (state.myNickname) localStorage.setItem('alchemy_nickname', state.myNickname);
 
   // Push room code to URL
-  const url = new URL(location.href);
-  url.searchParams.set('room', snap.code);
   const packSel = $('pack-select');
-  if (packSel?.value) url.searchParams.set('pack', packSel.value);
-  else url.searchParams.delete('pack');
-  history.replaceState({}, '', url);
+  const qs = '?room=' + snap.code + (packSel?.value ? '&pack=' + packSel.value : '');
+  history.replaceState({}, '', location.pathname + qs);
 
   // Show app
   modalOverlay.classList.add('hidden');
@@ -857,10 +854,7 @@ function onCompRoomState(snap) {
   if (state.myNickname) localStorage.setItem('alchemy_nickname', state.myNickname);
 
   // Push room code to URL
-  const url = new URL(location.href);
-  url.searchParams.set('room', snap.code);
-  url.searchParams.delete('pack'); // competition rooms don't use packs
-  history.replaceState({}, '', url);
+  history.replaceState({}, '', location.pathname + '?room=' + snap.code);
 
   modalOverlay.classList.add('hidden');
   app.classList.remove('hidden');
