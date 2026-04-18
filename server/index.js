@@ -105,6 +105,25 @@ app.delete('/api/admin/recipe', adminAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/admin/export', adminAuth, (_, res) => {
+  const data = editor.getEditorData();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename="editor.json"');
+  res.send(JSON.stringify(data, null, 2));
+});
+
+app.post('/api/admin/import', adminAuth, (req, res) => {
+  try {
+    editor.importData(req.body, elementMap, recipeMap, reverseRecipeMap);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.post('/api/admin/reset', adminAuth, (_, res) => {
+  editor.resetToDefaults(elementMap, recipeMap, reverseRecipeMap);
+  res.json({ ok: true });
+});
+
 // ─── In-memory room state ─────────────────────────────────────────────────────
 // rooms: Map<code, Room>
 // Room = {

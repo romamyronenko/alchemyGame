@@ -186,6 +186,14 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
 
 <header>
   <h1>⚗️ Alchemy Admin</h1>
+  <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
+    <button class="btn-ghost btn-sm" id="btn-export">⬇ Експорт</button>
+    <label class="btn-ghost btn-sm" style="cursor:pointer;padding:7px 14px;font-size:.85rem;font-weight:600;border-radius:6px;background:var(--bg3);color:var(--text)">
+      ⬆ Імпорт
+      <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+    </label>
+    <button class="btn-danger btn-sm" id="btn-reset">↺ Скинути</button>
+  </div>
   <div id="status"></div>
 </header>
 
@@ -762,6 +770,42 @@ document.getElementById('btn-save-element').addEventListener('click', async () =
     renderElementsTable();
     document.getElementById('btn-cancel-element').click();
     showStatus('Елемент додано ✓');
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
+});
+
+// ── Export / Import / Reset ───────────────────────────────────────────────────
+document.getElementById('btn-export').addEventListener('click', () => {
+  window.location.href = '/api/admin/export';
+});
+
+document.getElementById('import-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!confirm('Замінити всі кастомні дані даними з файлу?')) return;
+    const res = await fetch('/api/admin/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    showStatus('Імпортовано ✓');
+    await init();
+  } catch(e) { showStatus('Помилка імпорту: ' + e.message, false); }
+});
+
+document.getElementById('btn-reset').addEventListener('click', async () => {
+  if (!confirm('Скинути ВСІ кастомні іконки, рецепти та елементи до стандартних?')) return;
+  try {
+    const res = await fetch('/api/admin/reset', { method: 'POST' });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    showStatus('Скинуто до стандартних ✓');
+    await init();
   } catch(e) { showStatus('Помилка: ' + e.message, false); }
 });
 
