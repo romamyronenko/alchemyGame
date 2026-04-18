@@ -711,8 +711,13 @@ function computeHints() {
     if (state.discovered.has(resultId)) continue;               // already found
     if (!inputs.every(id => state.discovered.has(id))) continue; // missing ingredient
     hints.push({ resultId, inputs });
-    if (hints.length >= 10) break;
   }
+  // Sort by tier so lower-tier discoveries surface first
+  hints.sort((a, b) => {
+    const ta = state.allElements[a.resultId]?.tier ?? 99;
+    const tb = state.allElements[b.resultId]?.tier ?? 99;
+    return ta - tb;
+  });
   return hints;
 }
 

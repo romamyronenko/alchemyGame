@@ -467,7 +467,6 @@ const RAW_RECIPES = [
   { inputs: ['ice', 'metal'],                output: 'silver'    },
   { inputs: ['fire', 'water', 'stone'],      output: 'gem'       },
   { inputs: ['gem', 'pressure'],             output: 'diamond'   },
-  { inputs: ['crystal', 'ice'],              output: 'crystal'   },
   { inputs: ['gem', 'ice'],                  output: 'crystal'   },
 
   // life branch
