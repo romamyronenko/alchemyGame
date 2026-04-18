@@ -9,6 +9,7 @@ services:
     environment:
       PORT: 3000
       DB_PATH: /app/server/data/alchemy.json
+      EDITOR_PATH: /app/server/data/editor.json
       ROOM_TTL_DAYS: 7
 
 volumes:

@@ -8,10 +8,12 @@ const path       = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const db = require('./db');
-const { elementMap, recipeMap, reverseRecipeMap, ELEMENTS } = require('./elements');
+const { elementMap, recipeMap, reverseRecipeMap, ELEMENTS, ICONS } = require('./elements');
+const editor = require('./editor');
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 db.initDb();
+editor.initEditor(elementMap, recipeMap, reverseRecipeMap);
 
 const PORT    = process.env.PORT || 3000;
 const TTL_MS  = (Number(process.env.ROOM_TTL_DAYS) || 7) * 86_400_000;
@@ -21,8 +23,58 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../client')));
 app.get('/', (_, res) => res.sendFile(path.join(__dirname, '../client/index.html')));
+app.get('/admin', (_, res) => res.sendFile(path.join(__dirname, '../client/admin.html')));
+
+// ─── Admin API ────────────────────────────────────────────────────────────────
+app.get('/api/admin/data', (_, res) => {
+  const { icons, recipesAdd, recipesRemove } = editor.getEditorData();
+  res.json({
+    elements: ELEMENTS.map(e => ({
+      id: e.id, name: e.name, tier: e.tier, category: e.category,
+      icon: elementMap.get(e.id)?.icon,
+      isCustomIcon: !!icons[e.id],
+    })),
+    recipes: [...recipeMap.entries()].map(([key, output]) => ({
+      key, inputs: key.split('+'), output,
+      outputName: elementMap.get(output)?.name || output,
+      isCustom: recipesAdd.some(r => [...r.inputs].sort().join('+') === key),
+    })),
+    recipesRemove,
+  });
+});
+
+app.post('/api/admin/icon', (req, res) => {
+  const { id, data } = req.body || {};
+  try {
+    const def = editor.setIcon(id, data, elementMap);
+    if (!def) return res.status(404).json({ error: 'Unknown element' });
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/icon/:id', (req, res) => {
+  const def = editor.removeIcon(req.params.id, elementMap, ICONS);
+  if (!def) return res.status(404).json({ error: 'Unknown element' });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/recipe', (req, res) => {
+  try {
+    const result = editor.addRecipe(
+      req.body.inputs, req.body.output,
+      elementMap, recipeMap, reverseRecipeMap);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/recipe', (req, res) => {
+  const removed = editor.removeRecipe(req.body?.key, recipeMap, reverseRecipeMap);
+  if (!removed) return res.status(404).json({ error: 'Recipe not found' });
+  res.json({ ok: true });
+});
 
 // ─── In-memory room state ─────────────────────────────────────────────────────
 // rooms: Map<code, Room>

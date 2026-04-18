@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alchemy Admin</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:    #1a1a2e;
+  --bg2:   #16213e;
+  --bg3:   #0f3460;
+  --accent:#e94560;
+  --text:  #eee;
+  --text2: #aaa;
+  --green: #2ecc71;
+  --red:   #e74c3c;
+  --border:#ffffff22;
+}
+
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+/* ── Layout ── */
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex; align-items: center; gap: 16px;
+}
+header h1 { font-size: 1.2rem; font-weight: 700; }
+#status {
+  margin-left: auto; font-size: .85rem;
+  padding: 4px 12px; border-radius: 20px;
+  transition: opacity .4s;
+  opacity: 0;
+}
+#status.show { opacity: 1; }
+#status.ok  { background: #1a4a2a; color: var(--green); }
+#status.err { background: #4a1a1a; color: var(--red); }
+
+.tabs {
+  display: flex; gap: 0;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+}
+.tab {
+  background: none; border: none; color: var(--text2); cursor: pointer;
+  padding: 12px 20px; font-size: .95rem;
+  border-bottom: 3px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.tab.active { color: var(--text); border-color: var(--accent); }
+.tab:hover:not(.active) { color: var(--text); }
+
+.tab-content { display: none; padding: 20px; }
+.tab-content.active { display: block; }
+
+/* ── Search / toolbar ── */
+.toolbar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.toolbar input[type=text] {
+  flex: 1; min-width: 180px;
+  background: var(--bg2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 7px 12px; font-size: .9rem;
+}
+.toolbar label { display: flex; align-items: center; gap: 6px; color: var(--text2); cursor: pointer; }
+
+/* ── Buttons ── */
+button {
+  cursor: pointer; border: none; border-radius: 6px;
+  padding: 7px 14px; font-size: .85rem; font-weight: 600;
+  transition: opacity .15s;
+}
+button:hover { opacity: .85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-ghost   { background: var(--bg3); color: var(--text); }
+.btn-danger  { background: #4a1a1a; color: var(--red); }
+.btn-sm      { padding: 4px 10px; font-size: .8rem; }
+
+/* ── Icon grid ── */
+#icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+.icon-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  cursor: pointer; position: relative;
+  transition: border-color .15s, background .15s;
+  user-select: none;
+}
+.icon-card:hover { border-color: var(--accent); background: var(--bg3); }
+.icon-card.custom { border-color: #3a6e4a; }
+.icon-preview { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+.icon-preview svg, .icon-preview img { width: 40px; height: 40px; object-fit: contain; }
+.icon-name { font-size: .78rem; font-weight: 600; text-align: center; line-height: 1.2; word-break: break-word; }
+.icon-id   { font-size: .68rem; color: var(--text2); text-align: center; }
+.badge-custom {
+  position: absolute; top: 5px; right: 5px;
+  background: var(--green); color: #000; font-size: .6rem; font-weight: 700;
+  border-radius: 4px; padding: 1px 4px;
+}
+.btn-revert {
+  background: #4a1a1a; color: var(--red); font-size: .7rem;
+  padding: 3px 8px; border-radius: 4px; width: 100%; margin-top: 2px;
+}
+
+/* ── Modal ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal-overlay.hidden { display: none; }
+.modal-box {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 24px; width: 340px; max-width: 95vw;
+}
+.modal-box h3 { font-size: 1rem; margin-bottom: 16px; }
+.modal-box h3 strong { color: var(--accent); }
+.modal-current { margin-bottom: 12px; }
+.modal-current-label { font-size: .78rem; color: var(--text2); margin-bottom: 6px; }
+.modal-icon-preview {
+  width: 48px; height: 48px;
+  background: var(--bg3); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-icon-preview svg, .modal-icon-preview img { width: 40px; height: 40px; object-fit: contain; }
+.upload-area {
+  border: 2px dashed var(--border); border-radius: 8px;
+  padding: 16px; text-align: center; color: var(--text2);
+  cursor: pointer; margin: 14px 0;
+  transition: border-color .15s;
+}
+.upload-area:hover { border-color: var(--accent); }
+.upload-area input[type=file] { display: none; }
+#upload-new-preview { max-width: 100%; max-height: 80px; border-radius: 6px; display: none; margin: 8px auto 0; }
+.size-warning { color: #f39c12; font-size: .78rem; margin-top: 6px; display: none; }
+.modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.modal-actions button { flex: 1; }
+
+/* ── Recipes ── */
+.add-recipe-form {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; margin-bottom: 16px;
+}
+.add-recipe-form.hidden { display: none; }
+.add-recipe-form h3 { margin-bottom: 14px; font-size: .95rem; }
+.form-row { margin-bottom: 12px; }
+.form-row label { display: block; font-size: .8rem; color: var(--text2); margin-bottom: 6px; }
+.input-selectors { display: flex; gap: 8px; flex-wrap: wrap; }
+.input-selectors select, #output-sel {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 6px 10px; font-size: .85rem; flex: 1; min-width: 120px;
+}
+.form-actions { display: flex; gap: 10px; }
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  text-align: left; padding: 8px 12px;
+  font-size: .78rem; color: var(--text2); font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+tbody tr { border-bottom: 1px solid var(--border); }
+tbody tr:hover { background: #ffffff06; }
+tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
+.base-row td { color: var(--text2); }
+.custom-row td { color: var(--text); font-weight: 600; }
+.el-chip {
+  display: inline-block; background: var(--bg3);
+  border-radius: 4px; padding: 2px 8px; font-size: .8rem; margin: 2px;
+}
+.el-chip.output { background: #2a3a6a; }
+.badge-base   { font-size: .7rem; background: #333; color: var(--text2); padding: 2px 6px; border-radius: 4px; }
+.badge-custom-r { font-size: .7rem; background: #1a4a2a; color: var(--green); padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚗️ Alchemy Admin</h1>
+  <div id="status"></div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="icons">Іконки (<span id="icons-count">…</span>)</button>
+  <button class="tab" data-tab="recipes">Рецепти (<span id="recipe-count">…</span>)</button>
+</nav>
+
+<!-- ICONS TAB -->
+<section id="tab-icons" class="tab-content active">
+  <div class="toolbar">
+    <input type="text" id="icon-search" placeholder="Пошук елементів…">
+    <label><input type="checkbox" id="show-custom-only"> Тільки кастомні</label>
+  </div>
+  <div id="icon-grid"></div>
+</section>
+
+<!-- RECIPES TAB -->
+<section id="tab-recipes" class="tab-content">
+  <div class="toolbar">
+    <input type="text" id="recipe-search" placeholder="Пошук за назвою або ID…">
+    <button class="btn-primary" id="btn-add-recipe">+ Додати рецепт</button>
+  </div>
+
+  <div class="add-recipe-form hidden" id="add-recipe-form">
+    <h3>Новий рецепт</h3>
+    <div class="form-row">
+      <label>Інгредієнти (1–3 елементи):</label>
+      <div class="input-selectors" id="input-selectors">
+        <select class="input-sel"><option value="">—</option></select>
+        <select class="input-sel"><option value="">—</option></select>
+        <select class="input-sel"><option value="">—</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Результат:</label>
+      <select id="output-sel"><option value="">—</option></select>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" id="btn-save-recipe">Зберегти</button>
+      <button class="btn-ghost"   id="btn-cancel-recipe">Скасувати</button>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Інгредієнти</th>
+        <th></th>
+        <th>Результат</th>
+        <th>Тип</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="recipes-tbody"></tbody>
+  </table>
+</section>
+
+<!-- UPLOAD MODAL -->
+<div class="modal-overlay hidden" id="upload-modal">
+  <div class="modal-box">
+    <h3>Завантажити іконку для <strong id="upload-el-name"></strong></h3>
+    <div class="modal-current">
+      <div class="modal-current-label">Поточна іконка:</div>
+      <div class="modal-icon-preview" id="modal-current-icon"></div>
+    </div>
+    <div class="upload-area" id="upload-area">
+      <div>Клікни або перетягни зображення сюди</div>
+      <div style="font-size:.75rem;margin-top:4px">PNG, JPG, GIF, WEBP</div>
+      <input type="file" id="upload-file" accept="image/png,image/jpeg,image/gif,image/webp">
+      <img id="upload-new-preview" alt="preview">
+    </div>
+    <div class="size-warning" id="size-warning">⚠ Файл &gt;300 KB — буде займати більше місця в JSON і в сокеті</div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="btn-upload-save" disabled>Зберегти</button>
+      <button class="btn-ghost"   id="btn-upload-cancel">Скасувати</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let allElements = [], allRecipes = [], elementById = {};
+let uploadTargetId = null, uploadDataUri = null;
+
+// ── Status flash ───────────────────────────────────────────────────────────────
+let statusTimer;
+function showStatus(msg, ok = true) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'show ' + (ok ? 'ok' : 'err');
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const data = await fetch('/api/admin/data').then(r => r.json());
+    allElements = data.elements;
+    allRecipes  = data.recipes;
+    elementById = Object.fromEntries(allElements.map(e => [e.id, e]));
+    document.getElementById('icons-count').textContent = allElements.length;
+    document.getElementById('recipe-count').textContent = allRecipes.length;
+    renderIconGrid();
+    renderRecipesTable();
+    populateSelects();
+  } catch(e) {
+    showStatus('Помилка завантаження: ' + e.message, false);
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Icon grid ─────────────────────────────────────────────────────────────────
+function renderIconGrid() {
+  const q          = document.getElementById('icon-search').value.toLowerCase();
+  const customOnly = document.getElementById('show-custom-only').checked;
+
+  const filtered = allElements.filter(e =>
+    (!q || e.name.toLowerCase().includes(q) || e.id.includes(q)) &&
+    (!customOnly || e.isCustomIcon)
+  );
+
+  const grid = document.getElementById('icon-grid');
+  grid.innerHTML = '';
+
+  for (const e of filtered) {
+    const card = document.createElement('div');
+    card.className = 'icon-card' + (e.isCustomIcon ? ' custom' : '');
+    card.dataset.id = e.id;
+
+    const iconHtml = e.icon
+      ? (e.icon.startsWith('data:')
+          ? `<img src="${e.icon}" alt="${e.name}">`
+          : e.icon)
+      : '';
+
+    card.innerHTML = `
+      <div class="icon-preview">${iconHtml}</div>
+      <div class="icon-name">${e.name}</div>
+      <div class="icon-id">${e.id}</div>
+      ${e.isCustomIcon ? '<span class="badge-custom">C</span>' : ''}
+    `;
+
+    card.addEventListener('click', ev => {
+      if (ev.target.classList.contains('btn-revert')) return;
+      openUploadModal(e.id);
+    });
+
+    if (e.isCustomIcon) {
+      const revert = document.createElement('button');
+      revert.className = 'btn-revert';
+      revert.textContent = '↩ Скинути';
+      revert.addEventListener('click', ev => { ev.stopPropagation(); revertIcon(e.id); });
+      card.appendChild(revert);
+    }
+
+    grid.appendChild(card);
+  }
+}
+
+document.getElementById('icon-search').addEventListener('input', renderIconGrid);
+document.getElementById('show-custom-only').addEventListener('change', renderIconGrid);
+
+// ── Upload modal ──────────────────────────────────────────────────────────────
+function openUploadModal(id) {
+  uploadTargetId = id;
+  uploadDataUri  = null;
+  const el = elementById[id];
+  document.getElementById('upload-el-name').textContent = el.name;
+
+  const currentIcon = document.getElementById('modal-current-icon');
+  currentIcon.innerHTML = el.icon
+    ? (el.icon.startsWith('data:')
+        ? `<img src="${el.icon}" style="width:40px;height:40px;object-fit:contain">`
+        : el.icon)
+    : '—';
+
+  const preview = document.getElementById('upload-new-preview');
+  preview.style.display = 'none';
+  preview.src = '';
+  document.getElementById('upload-file').value = '';
+  document.getElementById('btn-upload-save').disabled = true;
+  document.getElementById('size-warning').style.display = 'none';
+  document.getElementById('upload-modal').classList.remove('hidden');
+}
+
+document.getElementById('upload-area').addEventListener('click', () => {
+  document.getElementById('upload-file').click();
+});
+
+document.getElementById('upload-area').addEventListener('dragover', e => e.preventDefault());
+document.getElementById('upload-area').addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) handleFileSelect(file);
+});
+
+document.getElementById('upload-file').addEventListener('change', e => {
+  if (e.target.files[0]) handleFileSelect(e.target.files[0]);
+});
+
+function handleFileSelect(file) {
+  const warn = document.getElementById('size-warning');
+  warn.style.display = file.size > 300_000 ? 'block' : 'none';
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadDataUri = ev.target.result;
+    const preview = document.getElementById('upload-new-preview');
+    preview.src = uploadDataUri;
+    preview.style.display = 'block';
+    document.getElementById('btn-upload-save').disabled = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+document.getElementById('btn-upload-save').addEventListener('click', async () => {
+  if (!uploadDataUri || !uploadTargetId) return;
+  try {
+    const res = await fetch('/api/admin/icon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: uploadTargetId, data: uploadDataUri }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    // Update local state
+    const el = elementById[uploadTargetId];
+    el.icon = uploadDataUri;
+    el.isCustomIcon = true;
+    closeModal();
+    renderIconGrid();
+    showStatus('Іконку збережено ✓');
+  } catch(e) {
+    showStatus('Помилка: ' + e.message, false);
+  }
+});
+
+document.getElementById('btn-upload-cancel').addEventListener('click', closeModal);
+document.getElementById('upload-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+function closeModal() {
+  document.getElementById('upload-modal').classList.add('hidden');
+  uploadTargetId = null;
+  uploadDataUri = null;
+}
+
+async function revertIcon(id) {
+  try {
+    const res = await fetch(`/api/admin/icon/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    const el = elementById[id];
+    el.icon = json.icon || '';
+    el.isCustomIcon = false;
+    // Refresh icon from server (SVG is returned in fresh data)
+    const fresh = await fetch('/api/admin/data').then(r => r.json());
+    const freshEl = fresh.elements.find(e => e.id === id);
+    if (freshEl) { el.icon = freshEl.icon; el.isCustomIcon = false; }
+    renderIconGrid();
+    showStatus('Іконку скинуто ✓');
+  } catch(e) {
+    showStatus('Помилка: ' + e.message, false);
+  }
+}
+
+// ── Recipes ───────────────────────────────────────────────────────────────────
+function renderRecipesTable() {
+  document.getElementById('recipe-count').textContent = allRecipes.length;
+  const q = document.getElementById('recipe-search').value.toLowerCase();
+
+  const filtered = allRecipes.filter(r => {
+    if (!q) return true;
+    if (r.output.includes(q) || r.outputName.toLowerCase().includes(q)) return true;
+    return r.inputs.some(id => id.includes(q) || (elementById[id]?.name || '').toLowerCase().includes(q));
+  });
+
+  const tbody = document.getElementById('recipes-tbody');
+  tbody.innerHTML = '';
+
+  for (const r of filtered) {
+    const tr = document.createElement('tr');
+    tr.className = r.isCustom ? 'custom-row' : 'base-row';
+
+    const inputsHtml = r.inputs
+      .map(id => `<span class="el-chip">${elementById[id]?.name || id}</span>`)
+      .join(' + ');
+
+    tr.innerHTML = `
+      <td>${inputsHtml}</td>
+      <td>→</td>
+      <td><span class="el-chip output">${r.outputName}</span></td>
+      <td>${r.isCustom
+        ? '<span class="badge-custom-r">Custom</span>'
+        : '<span class="badge-base">Base</span>'}</td>
+      <td>
+        <button class="btn-danger btn-sm btn-del-recipe" data-key="${r.key}">Видалити</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  tbody.querySelectorAll('.btn-del-recipe').forEach(btn => {
+    btn.addEventListener('click', () => deleteRecipe(btn.dataset.key));
+  });
+}
+
+document.getElementById('recipe-search').addEventListener('input', renderRecipesTable);
+
+async function deleteRecipe(key) {
+  const r = allRecipes.find(r => r.key === key);
+  const label = r ? `${r.inputs.join(' + ')} → ${r.outputName}` : key;
+  if (!confirm(`Видалити рецепт: ${label}?`)) return;
+  try {
+    const res = await fetch('/api/admin/recipe', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    allRecipes = allRecipes.filter(r => r.key !== key);
+    renderRecipesTable();
+    showStatus('Рецепт видалено ✓');
+  } catch(e) {
+    showStatus('Помилка: ' + e.message, false);
+  }
+}
+
+// ── Add recipe form ───────────────────────────────────────────────────────────
+function populateSelects() {
+  const sorted = [...allElements].sort((a, b) => a.name.localeCompare(b.name));
+  const opts = sorted.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
+
+  document.querySelectorAll('.input-sel').forEach(sel => {
+    sel.innerHTML = '<option value="">—</option>' + opts;
+  });
+  document.getElementById('output-sel').innerHTML = '<option value="">—</option>' + opts;
+}
+
+document.getElementById('btn-add-recipe').addEventListener('click', () => {
+  document.getElementById('add-recipe-form').classList.toggle('hidden');
+});
+
+document.getElementById('btn-cancel-recipe').addEventListener('click', () => {
+  document.getElementById('add-recipe-form').classList.add('hidden');
+  document.querySelectorAll('.input-sel').forEach(s => s.value = '');
+  document.getElementById('output-sel').value = '';
+});
+
+document.getElementById('btn-save-recipe').addEventListener('click', async () => {
+  const inputs = [...document.querySelectorAll('.input-sel')]
+    .map(s => s.value).filter(Boolean);
+  const output = document.getElementById('output-sel').value;
+
+  if (inputs.length === 0) return showStatus('Вибери хоча б один інгредієнт', false);
+  if (!output) return showStatus('Вибери результат', false);
+
+  try {
+    const res = await fetch('/api/admin/recipe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs, output }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+
+    const key = json.key;
+    allRecipes.push({
+      key, inputs: key.split('+'), output,
+      outputName: elementById[output]?.name || output,
+      isCustom: true,
+    });
+    document.getElementById('btn-cancel-recipe').click();
+    renderRecipesTable();
+    showStatus('Рецепт додано ✓');
+  } catch(e) {
+    showStatus('Помилка: ' + e.message, false);
+  }
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
