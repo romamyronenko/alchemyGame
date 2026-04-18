@@ -188,6 +188,29 @@ app.post('/api/admin/pack/:id/import', adminAuth, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// Bulk element remove/restore
+app.post('/api/admin/pack/:id/elements/remove', adminAuth, (req, res) => {
+  try { editor.removePackElements(req.params.id, req.body.ids || []); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post('/api/admin/pack/:id/elements/restore', adminAuth, (req, res) => {
+  try { editor.restorePackElements(req.params.id, req.body.ids || []); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Bulk recipe remove/restore
+app.post('/api/admin/pack/:id/recipes/remove', adminAuth, (req, res) => {
+  try {
+    if (req.body.all) editor.removeAllBasePackRecipes(req.params.id);
+    else editor.removePackRecipesBulk(req.params.id, req.body.keys || []);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post('/api/admin/pack/:id/recipes/restore', adminAuth, (req, res) => {
+  try { editor.restorePackRecipes(req.params.id, req.body.keys || []); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ─── In-memory room state ─────────────────────────────────────────────────────
 // rooms: Map<code, Room>
 // Room = {

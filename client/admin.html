@@ -245,6 +245,7 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
     <input type="text" id="recipe-search" placeholder="Пошук за назвою або ID…">
     <button class="btn-primary" id="btn-add-recipe">+ Додати рецепт</button>
   </div>
+  <div id="recipe-bulk-bar" class="toolbar" style="display:none;background:var(--bg2);padding:8px 12px;border-radius:8px;margin-bottom:12px"></div>
 
   <div class="add-recipe-form hidden" id="add-recipe-form">
     <h3>Новий рецепт</h3>
@@ -269,6 +270,7 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
   <table>
     <thead>
       <tr>
+        <th style="width:28px"></th>
         <th>Інгредієнти</th>
         <th></th>
         <th>Результат</th>
@@ -285,6 +287,7 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
   <div class="toolbar">
     <button class="btn-primary" id="btn-add-element">+ Новий елемент</button>
   </div>
+  <div id="element-bulk-bar" class="toolbar" style="display:none;background:var(--bg2);padding:8px 12px;border-radius:8px;margin-bottom:12px"></div>
 
   <div class="add-recipe-form hidden" id="add-element-form">
     <h3>Новий елемент</h3>
@@ -337,6 +340,7 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
   <table id="elements-table" style="margin-top:16px">
     <thead>
       <tr>
+        <th style="width:28px"></th>
         <th>Іконка</th>
         <th>ID</th>
         <th>Назва</th>
@@ -689,25 +693,56 @@ async function revertIcon(id) {
 
 // ── Recipes ───────────────────────────────────────────────────────────────────
 function getDisplayedRecipes() {
-  if (currentPackId && currentPackData) {
-    return (currentPackData.recipes || []).map(r => {
-      const key = [...r.inputs].sort().join('+');
-      return {
-        key, inputs: r.inputs, output: r.output,
-        outputName: elementById[r.output]?.name || r.output,
-        isCustom: true, isPack: true,
-      };
-    });
-  }
-  return allRecipes;
+  if (!currentPackId || !currentPackData) return allRecipes;
+  const removed = new Set(currentPackData.recipesRemove || []);
+  // Base + global recipes, filtered by pack removals
+  const active = allRecipes.filter(r => !removed.has(r.key));
+  // Pack custom additions (not already in active)
+  const activeKeys = new Set(active.map(r => r.key));
+  const packCustom = (currentPackData.recipesAdd || []).map(r => {
+    const key = [...r.inputs].sort().join('+');
+    return { key, inputs: r.inputs, output: r.output,
+             outputName: elementById[r.output]?.name || r.output,
+             isCustom: true, isPack: true };
+  }).filter(r => !activeKeys.has(r.key));
+  return [...active, ...packCustom];
+}
+
+function getRemovedPackRecipes() {
+  if (!currentPackId || !currentPackData) return [];
+  const removed = new Set(currentPackData.recipesRemove || []);
+  return allRecipes.filter(r => removed.has(r.key));
 }
 
 function renderRecipesTable() {
   const recipes = getDisplayedRecipes();
-  const label = currentPackId
-    ? `${recipes.length} (пак)`
-    : recipes.length;
+  const label = currentPackId ? `${recipes.length} (пак)` : recipes.length;
   document.getElementById('recipe-count').textContent = label;
+
+  // Bulk toolbar
+  const bulkBar = document.getElementById('recipe-bulk-bar');
+  if (currentPackId) {
+    const removedCount = getRemovedPackRecipes().length;
+    bulkBar.innerHTML = `
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="recipe-select-all"> Всі
+      </label>
+      <button class="btn-danger btn-sm" id="btn-remove-sel-recipes" disabled>Видалити вибрані</button>
+      <button class="btn-danger btn-sm" id="btn-remove-all-recipes">Видалити всі базові</button>
+      ${removedCount ? `<button class="btn-ghost btn-sm" id="btn-show-removed-recipes">Показати видалені (${removedCount})</button>` : ''}
+    `;
+    bulkBar.style.display = '';
+    document.getElementById('recipe-select-all').addEventListener('change', e => {
+      document.querySelectorAll('.recipe-cb').forEach(cb => cb.checked = e.target.checked);
+      updateRecipeBulkBtn();
+    });
+    document.getElementById('btn-remove-sel-recipes').addEventListener('click', removeSelectedRecipes);
+    document.getElementById('btn-remove-all-recipes').addEventListener('click', removeAllBaseRecipes);
+    document.getElementById('btn-show-removed-recipes')?.addEventListener('click', showRemovedRecipes);
+  } else {
+    bulkBar.innerHTML = '';
+    bulkBar.style.display = 'none';
+  }
 
   const q = document.getElementById('recipe-search').value.toLowerCase();
   const filtered = recipes.filter(r => {
@@ -728,19 +763,111 @@ function renderRecipesTable() {
     const badge = r.isPack
       ? '<span class="badge-pack">Пак</span>'
       : (r.isCustom ? '<span class="badge-custom-r">Custom</span>' : '<span class="badge-base">Base</span>');
+    const cbCell = currentPackId
+      ? `<td><input type="checkbox" class="recipe-cb" data-key="${r.key}"></td>`
+      : '<td></td>';
     tr.innerHTML = `
+      ${cbCell}
       <td>${inputsHtml}</td>
       <td>→</td>
       <td><span class="el-chip output">${r.outputName}</span></td>
       <td>${badge}</td>
-      <td><button class="btn-danger btn-sm btn-del-recipe" data-key="${r.key}">Видалити</button></td>
+      <td><button class="btn-danger btn-sm btn-del-recipe" data-key="${r.key}">✕</button></td>
     `;
     tbody.appendChild(tr);
   }
 
+  tbody.querySelectorAll('.recipe-cb').forEach(cb => {
+    cb.addEventListener('change', updateRecipeBulkBtn);
+  });
   tbody.querySelectorAll('.btn-del-recipe').forEach(btn => {
     btn.addEventListener('click', () => deleteRecipe(btn.dataset.key));
   });
+}
+
+function updateRecipeBulkBtn() {
+  const n = document.querySelectorAll('.recipe-cb:checked').length;
+  const btn = document.getElementById('btn-remove-sel-recipes');
+  if (btn) { btn.disabled = n === 0; btn.textContent = `Видалити вибрані (${n})`; }
+}
+
+async function removeSelectedRecipes() {
+  const keys = [...document.querySelectorAll('.recipe-cb:checked')].map(cb => cb.dataset.key);
+  if (!keys.length) return;
+  if (!confirm(`Видалити ${keys.length} рецептів з паку?`)) return;
+  await packRecipesRemove(keys);
+}
+
+async function removeAllBaseRecipes() {
+  if (!confirm('Видалити ВСІ базові рецепти з паку?')) return;
+  try {
+    const res = await fetch(`/api/admin/pack/${currentPackId}/recipes/remove`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ all: true }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    currentPackData.recipesRemove = allRecipes.map(r => r.key);
+    currentPackData.recipesAdd = currentPackData.recipesAdd || [];
+    renderRecipesTable(); refreshPackCounts();
+    showStatus('Всі базові рецепти видалено ✓');
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
+}
+
+async function packRecipesRemove(keys) {
+  try {
+    const res = await fetch(`/api/admin/pack/${currentPackId}/recipes/remove`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ keys }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    // Update local state
+    const keySet = new Set(keys);
+    currentPackData.recipesRemove = [...new Set([...(currentPackData.recipesRemove||[]), ...keys])];
+    currentPackData.recipesAdd = (currentPackData.recipesAdd||[]).filter(r => !keySet.has([...r.inputs].sort().join('+')));
+    renderRecipesTable(); refreshPackCounts();
+    showStatus(`Видалено ${keys.length} рецептів ✓`);
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
+}
+
+function showRemovedRecipes() {
+  const removed = getRemovedPackRecipes();
+  if (!removed.length) return;
+  const tbody = document.getElementById('recipes-tbody');
+  const sep = document.createElement('tr');
+  sep.innerHTML = `<td colspan="6" style="color:var(--text2);font-size:.8rem;padding:12px;background:var(--bg)">— Видалені рецепти (${removed.length}) —</td>`;
+  tbody.appendChild(sep);
+  for (const r of removed) {
+    const tr = document.createElement('tr');
+    tr.style.opacity = '0.45';
+    const inputsHtml = r.inputs.map(id => `<span class="el-chip">${elementById[id]?.name||id}</span>`).join(' + ');
+    tr.innerHTML = `
+      <td></td>
+      <td>${inputsHtml}</td><td>→</td>
+      <td><span class="el-chip output">${r.outputName}</span></td>
+      <td><span class="badge-base">Видалено</span></td>
+      <td><button class="btn-ghost btn-sm restore-recipe-btn" data-key="${r.key}">Відновити</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('.restore-recipe-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const key = btn.dataset.key;
+      const res = await fetch(`/api/admin/pack/${currentPackId}/recipes/restore`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ keys: [key] }),
+      });
+      const json = await res.json();
+      if (!res.ok) return showStatus('Помилка: ' + json.error, false);
+      currentPackData.recipesRemove = (currentPackData.recipesRemove||[]).filter(k => k !== key);
+      renderRecipesTable(); refreshPackCounts();
+      showStatus('Рецепт відновлено ✓');
+    });
+  });
+  // Replace button with "Hide"
+  const showBtn = document.getElementById('btn-show-removed-recipes');
+  if (showBtn) showBtn.remove();
 }
 
 document.getElementById('recipe-search').addEventListener('input', renderRecipesTable);
@@ -845,62 +972,158 @@ document.getElementById('btn-save-recipe').addEventListener('click', async () =>
 let elIconDataUri = null;
 
 function getDisplayedElements() {
-  if (currentPackId && currentPackData) {
-    return (currentPackData.elementsAdd || []).map(e => ({ ...e, isCustomElement: true }));
-  }
-  return allElements.filter(e => e.isCustomElement);
+  if (!currentPackId || !currentPackData) return allElements.filter(e => e.isCustomElement);
+  const removed = new Set(currentPackData.elementsRemove || []);
+  const inPack = allElements.filter(e => !removed.has(e.id));
+  const packCustomIds = new Set((currentPackData.elementsAdd || []).map(e => e.id));
+  const packCustom = (currentPackData.elementsAdd || []).map(e => ({ ...e, isPackCustom: true }));
+  const extra = packCustom.filter(e => !inPack.find(x => x.id === e.id));
+  return [...inPack, ...extra].map(e => ({ ...e, isPackCustom: packCustomIds.has(e.id) }));
+}
+
+function getRemovedPackElements() {
+  if (!currentPackId || !currentPackData) return [];
+  const removed = new Set(currentPackData.elementsRemove || []);
+  return allElements.filter(e => removed.has(e.id));
 }
 
 function renderElementsTable() {
-  const custom = getDisplayedElements();
-  const label = currentPackId ? `${custom.length} (пак)` : custom.length;
+  const elems = getDisplayedElements();
+  const label = currentPackId ? `${elems.length} (пак)` : elems.filter(e => e.isCustomElement).length;
   document.getElementById('elements-count').textContent = label;
+
+  // Bulk toolbar
+  const bulkBar = document.getElementById('element-bulk-bar');
+  if (currentPackId) {
+    const removedCount = getRemovedPackElements().length;
+    bulkBar.innerHTML = `
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="el-select-all"> Всі
+      </label>
+      <button class="btn-danger btn-sm" id="btn-remove-sel-elements" disabled>Видалити вибрані</button>
+      ${removedCount ? `<button class="btn-ghost btn-sm" id="btn-show-removed-elements">Показати видалені (${removedCount})</button>` : ''}
+    `;
+    bulkBar.style.display = '';
+    document.getElementById('el-select-all').addEventListener('change', e => {
+      document.querySelectorAll('.el-cb').forEach(cb => cb.checked = e.target.checked);
+      updateElBulkBtn();
+    });
+    document.getElementById('btn-remove-sel-elements').addEventListener('click', removeSelectedElements);
+    document.getElementById('btn-show-removed-elements')?.addEventListener('click', showRemovedElements);
+  } else {
+    bulkBar.innerHTML = '';
+    bulkBar.style.display = 'none';
+  }
+
   const tbody = document.getElementById('elements-tbody');
   tbody.innerHTML = '';
-  for (const e of custom) {
+  const list = currentPackId ? elems : elems.filter(e => e.isCustomElement);
+  for (const e of list) {
     const tr = document.createElement('tr');
     const iconHtml = e.icon
       ? (e.icon.startsWith('data:') ? `<img src="${e.icon}" style="width:32px;height:32px;object-fit:contain">` : e.icon)
       : '—';
+    const badge = currentPackId && e.isPackCustom ? ' <span class="badge-pack" style="font-size:.65rem">Новий</span>' : '';
+    const cbCell = currentPackId ? `<td><input type="checkbox" class="el-cb" data-id="${e.id}"></td>` : '<td></td>';
     tr.innerHTML = `
+      ${cbCell}
       <td><div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center">${iconHtml}</div></td>
-      <td><code>${e.id}</code></td>
+      <td><code>${e.id}</code>${badge}</td>
       <td>${e.name}</td>
-      <td>${e.tier}</td>
-      <td>${e.category}</td>
-      <td><button class="btn-danger btn-sm btn-del-el" data-id="${e.id}">Видалити</button></td>
+      <td>${e.tier ?? '—'}</td>
+      <td>${e.category ?? '—'}</td>
+      <td><button class="btn-danger btn-sm btn-del-el" data-id="${e.id}">✕</button></td>
     `;
     tbody.appendChild(tr);
   }
+  tbody.querySelectorAll('.el-cb').forEach(cb => cb.addEventListener('change', updateElBulkBtn));
   tbody.querySelectorAll('.btn-del-el').forEach(btn => {
     btn.addEventListener('click', () => deleteElement(btn.dataset.id));
   });
 }
 
+function updateElBulkBtn() {
+  const n = document.querySelectorAll('.el-cb:checked').length;
+  const btn = document.getElementById('btn-remove-sel-elements');
+  if (btn) { btn.disabled = n === 0; btn.textContent = `Видалити вибрані (${n})`; }
+}
+
+async function removeSelectedElements() {
+  const ids = [...document.querySelectorAll('.el-cb:checked')].map(cb => cb.dataset.id);
+  if (!ids.length) return;
+  if (!confirm(`Видалити ${ids.length} елементів з паку?`)) return;
+  await removeSelectedElementsById(ids);
+}
+
+function showRemovedElements() {
+  const removed = getRemovedPackElements();
+  if (!removed.length) return;
+  const tbody = document.getElementById('elements-tbody');
+  const sep = document.createElement('tr');
+  sep.innerHTML = `<td colspan="7" style="color:var(--text2);font-size:.8rem;padding:12px;background:var(--bg)">— Видалені елементи (${removed.length}) —</td>`;
+  tbody.appendChild(sep);
+  for (const e of removed) {
+    const tr = document.createElement('tr');
+    tr.style.opacity = '0.45';
+    const iconHtml = e.icon ? (e.icon.startsWith('data:') ? `<img src="${e.icon}" style="width:32px;height:32px;object-fit:contain">` : e.icon) : '—';
+    tr.innerHTML = `
+      <td></td>
+      <td><div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center">${iconHtml}</div></td>
+      <td><code>${e.id}</code></td><td>${e.name}</td><td>${e.tier??'—'}</td><td>${e.category??'—'}</td>
+      <td><button class="btn-ghost btn-sm restore-el-btn" data-id="${e.id}">Відновити</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('.restore-el-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const res = await fetch(`/api/admin/pack/${currentPackId}/elements/restore`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ ids: [id] }),
+      });
+      const json = await res.json();
+      if (!res.ok) return showStatus('Помилка: ' + json.error, false);
+      currentPackData.elementsRemove = (currentPackData.elementsRemove||[]).filter(x => x !== id);
+      renderElementsTable(); refreshPackCounts();
+      showStatus('Елемент відновлено ✓');
+    });
+  });
+  document.getElementById('btn-show-removed-elements')?.remove();
+}
+
 async function deleteElement(id) {
-  const el = currentPackId
-    ? (currentPackData?.elementsAdd || []).find(e => e.id === id)
-    : elementById[id];
-  if (!confirm(`Видалити елемент "${el?.name || id}"?`)) return;
+  const el = elementById[id] || (currentPackData?.elementsAdd || []).find(e => e.id === id);
+  if (!confirm(`Видалити елемент "${el?.name || id}" з паку?`)) return;
+  if (currentPackId) {
+    // Delegate to bulk remove (handles both base-remove and pack-custom-delete)
+    return removeSelectedElementsById([id]);
+  }
   try {
-    let res;
-    if (currentPackId) {
-      res = await fetch(`/api/admin/pack/${currentPackId}/element/${id}`, { method: 'DELETE' });
-    } else {
-      res = await fetch(`/api/admin/element/${id}`, { method: 'DELETE' });
-    }
+    const res = await fetch(`/api/admin/element/${id}`, { method: 'DELETE' });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
-    if (currentPackId && currentPackData) {
-      currentPackData.elementsAdd = (currentPackData.elementsAdd || []).filter(e => e.id !== id);
-    } else {
-      allElements = allElements.filter(e => e.id !== id);
-      delete elementById[id];
-      populateSelects();
-    }
+    allElements = allElements.filter(e => e.id !== id);
+    delete elementById[id];
+    populateSelects();
     renderElementsTable();
     await refreshPackCounts();
     showStatus('Елемент видалено ✓');
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
+}
+
+async function removeSelectedElementsById(ids) {
+  try {
+    const res = await fetch(`/api/admin/pack/${currentPackId}/elements/remove`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ids }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    const idSet = new Set(ids);
+    currentPackData.elementsRemove = [...new Set([...(currentPackData.elementsRemove||[]), ...ids])];
+    currentPackData.elementsAdd = (currentPackData.elementsAdd||[]).filter(e => !idSet.has(e.id));
+    renderElementsTable(); refreshPackCounts();
+    showStatus(`Видалено ${ids.length} елементів ✓`);
   } catch(e) { showStatus('Помилка: ' + e.message, false); }
 }
 

@@ -216,14 +216,25 @@ function getPack(packId) {
 }
 
 function getPackList() {
-  return Object.entries(editorData.packs).map(([id, p]) => ({
-    id,
-    name:         p.name || id,
-    recipeCount:  (p.recipes     || []).length,
-    elementCount: (p.elementsAdd || []).length,
-    iconCount:    Object.keys(p.icons || {}).length,
-    starterIds:   p.starterIds   || [],
-  }));
+  const baseCount = baseRecipeEntries.length;
+  return Object.entries(editorData.packs).map(([id, p]) => {
+    // Legacy packs have p.recipes; new packs have recipesAdd/recipesRemove
+    const recipeCount = p.recipes
+      ? (p.recipes || []).length
+      : baseCount
+        - (p.recipesRemove || []).length
+        + (p.recipesAdd    || []).length;
+    return {
+      id,
+      name:                p.name || id,
+      recipeCount:         Math.max(0, recipeCount),
+      elementCount:        (p.elementsAdd    || []).length,
+      removedElementCount: (p.elementsRemove || []).length,
+      removedRecipeCount:  (p.recipesRemove  || []).length,
+      iconCount:           Object.keys(p.icons || {}).length,
+      starterIds:          p.starterIds || [],
+    };
+  });
 }
 
 function addPack(def) {
@@ -232,7 +243,12 @@ function addPack(def) {
     throw new Error('Pack ID must contain only lowercase letters, digits, underscores');
   if (editorData.packs[id]) throw new Error(`Pack already exists: ${id}`);
   if (!name || !name.trim()) throw new Error('Pack name is required');
-  editorData.packs[id] = { name: name.trim(), recipes: [], icons: {}, elementsAdd: [], starterIds: [] };
+  editorData.packs[id] = {
+    name: name.trim(),
+    recipesAdd: [], recipesRemove: [],
+    elementsAdd: [], elementsRemove: [],
+    icons: {}, starterIds: [],
+  };
   save();
   return { id, ...editorData.packs[id] };
 }
@@ -251,45 +267,83 @@ function buildPackMaps(packId) {
   const pack = editorData.packs[packId];
   if (!pack) return null;
 
-  // Full element pool: base + pack custom, with pack icon overrides
+  // ── Elements ──────────────────────────────────────────────────────────────
+  const removedElIds = new Set(pack.elementsRemove || []);
+
   const allElMap = new Map();
+  // Base elements (minus removed)
   for (const [id, def] of baseElementEntries) {
+    if (removedElIds.has(id)) continue;
     const icon = (pack.icons || {})[id] || def.icon;
     allElMap.set(id, { ...def, icon });
   }
+  // Global custom elements (minus removed)
+  for (const el of (editorData.elementsAdd || [])) {
+    if (!allElMap.has(el.id) && !removedElIds.has(el.id)) {
+      const icon = (pack.icons || {})[el.id] || el.icon;
+      allElMap.set(el.id, { ...el, icon });
+    }
+  }
+  // Pack custom elements (always included)
   for (const el of (pack.elementsAdd || [])) {
     if (!allElMap.has(el.id)) allElMap.set(el.id, { ...el });
   }
 
-  // Recipes: only pack recipes
+  // ── Recipes ───────────────────────────────────────────────────────────────
   const rMap = new Map();
   const revMap = new Map();
-  for (const r of (pack.recipes || [])) {
-    const key = [...r.inputs].sort().join('+');
-    rMap.set(key, r.output);
-    if (!revMap.has(r.output)) revMap.set(r.output, [...r.inputs].sort());
+
+  if (pack.recipes && !pack.recipesAdd) {
+    // Legacy format: pack.recipes is a full replacement list
+    for (const r of pack.recipes) {
+      const key = [...r.inputs].sort().join('+');
+      rMap.set(key, r.output);
+      if (!revMap.has(r.output)) revMap.set(r.output, [...r.inputs].sort());
+    }
+  } else {
+    // New format: inherit from global state, apply pack removes/adds
+    const packRemovedKeys = new Set(pack.recipesRemove || []);
+    const globalRemovedKeys = new Set(editorData.recipesRemove || []);
+
+    for (const [key, output] of baseRecipeEntries) {
+      if (!globalRemovedKeys.has(key) && !packRemovedKeys.has(key)) {
+        rMap.set(key, output);
+        if (!revMap.has(output)) revMap.set(output, key.split('+'));
+      }
+    }
+    for (const r of (editorData.recipesAdd || [])) {
+      const key = [...r.inputs].sort().join('+');
+      if (!packRemovedKeys.has(key)) {
+        rMap.set(key, r.output);
+        if (!revMap.has(r.output)) revMap.set(r.output, [...r.inputs].sort());
+      }
+    }
+    for (const r of (pack.recipesAdd || [])) {
+      const key = [...r.inputs].sort().join('+');
+      rMap.set(key, r.output);
+      if (!revMap.has(r.output)) revMap.set(r.output, [...r.inputs].sort());
+    }
   }
 
-  // Resolve starter IDs
+  // ── Starters ──────────────────────────────────────────────────────────────
   const starterIds = (pack.starterIds && pack.starterIds.length)
     ? pack.starterIds.filter(id => allElMap.has(id))
     : [...allElMap.values()].filter(e => e.isStarter).map(e => e.id);
 
-  // BFS: compute reachable elements from starters through pack recipes
+  // ── BFS: reachable elements ────────────────────────────────────────────────
   const reachable = new Set(starterIds);
   let changed = true;
   while (changed) {
     changed = false;
-    for (const r of (pack.recipes || [])) {
-      if (!reachable.has(r.output) && r.inputs.every(id => reachable.has(id))) {
-        reachable.add(r.output);
+    for (const [key, output] of rMap) {
+      if (!reachable.has(output) && key.split('+').every(id => reachable.has(id))) {
+        reachable.add(output);
         changed = true;
       }
     }
   }
 
   const elements = [...reachable].map(id => allElMap.get(id)).filter(Boolean);
-
   return { recipeMap: rMap, reverseMap: revMap, elements, starterIds };
 }
 
@@ -300,31 +354,95 @@ function addPackRecipe(packId, inputs, output) {
     throw new Error('inputs must be an array of 1–3 element IDs');
   if (!output) throw new Error('output is required');
 
-  // Validate elements exist (base + pack custom)
+  // Validate elements exist (base + global custom + pack custom)
   const validIds = new Set([
     ...baseElementEntries.map(([id]) => id),
+    ...(editorData.elementsAdd || []).map(e => e.id),
     ...(pack.elementsAdd || []).map(e => e.id),
   ]);
   for (const id of [...inputs, output])
     if (!validIds.has(id)) throw new Error(`Unknown element: ${id}`);
 
   const key = [...inputs].sort().join('+');
-  if ((pack.recipes || []).some(r => [...r.inputs].sort().join('+') === key))
+
+  // Legacy packs
+  if (pack.recipes && !pack.recipesAdd) {
+    if (pack.recipes.some(r => [...r.inputs].sort().join('+') === key))
+      throw new Error(`Recipe already exists in pack: ${key}`);
+    pack.recipes.push({ inputs: [...inputs], output });
+    save();
+    return { key, output };
+  }
+
+  // If recipe was previously removed, just restore it
+  const removeIdx = (pack.recipesRemove || []).indexOf(key);
+  if (removeIdx !== -1) {
+    pack.recipesRemove.splice(removeIdx, 1);
+    save();
+    return { key, output };
+  }
+
+  // Check not already present (base or custom)
+  if ((pack.recipesAdd || []).some(r => [...r.inputs].sort().join('+') === key))
     throw new Error(`Recipe already exists in pack: ${key}`);
 
-  pack.recipes = pack.recipes || [];
-  pack.recipes.push({ inputs: [...inputs], output });
+  const isAlreadyBase = baseRecipeEntries.some(([k]) => k === key)
+    && !(editorData.recipesRemove || []).includes(key);
+  const isAlreadyGlobal = (editorData.recipesAdd || []).some(r => [...r.inputs].sort().join('+') === key);
+  if (isAlreadyBase || isAlreadyGlobal)
+    throw new Error(`Recipe already in pack by default (base recipe): ${key}`);
+
+  pack.recipesAdd = pack.recipesAdd || [];
+  pack.recipesAdd.push({ inputs: [...inputs], output });
   save();
   return { key, output };
 }
 
 function removePackRecipe(packId, key) {
+  return removePackRecipesBulk(packId, [key]) ? key : null;
+}
+
+// Remove multiple recipes from pack (bulk)
+function removePackRecipesBulk(packId, keys) {
   const pack = getPack(packId);
-  const idx = (pack.recipes || []).findIndex(r => [...r.inputs].sort().join('+') === key);
-  if (idx === -1) return null;
-  pack.recipes.splice(idx, 1);
+  pack.recipesRemove = pack.recipesRemove || [];
+  pack.recipesAdd    = pack.recipesAdd    || [];
+  for (const key of keys) {
+    // If in custom recipesAdd, remove it entirely
+    const addIdx = pack.recipesAdd.findIndex(r => [...r.inputs].sort().join('+') === key);
+    if (addIdx !== -1) { pack.recipesAdd.splice(addIdx, 1); continue; }
+    // Legacy
+    if (pack.recipes) {
+      const legIdx = pack.recipes.findIndex(r => [...r.inputs].sort().join('+') === key);
+      if (legIdx !== -1) { pack.recipes.splice(legIdx, 1); continue; }
+    }
+    // Otherwise add to recipesRemove (base recipe exclusion)
+    if (!pack.recipesRemove.includes(key)) pack.recipesRemove.push(key);
+  }
   save();
-  return key;
+  return true;
+}
+
+// Remove ALL base+global recipes from pack (keep only pack custom adds)
+function removeAllBasePackRecipes(packId) {
+  const pack = getPack(packId);
+  const globalRemovedKeys = new Set(editorData.recipesRemove || []);
+  const allBaseKeys = baseRecipeEntries
+    .filter(([key]) => !globalRemovedKeys.has(key))
+    .map(([key]) => key);
+  const globalAddKeys = (editorData.recipesAdd || []).map(r => [...r.inputs].sort().join('+'));
+  pack.recipesRemove = [...new Set([...allBaseKeys, ...globalAddKeys])];
+  // Also clear legacy field
+  if (pack.recipes) { pack.recipesAdd = pack.recipes; delete pack.recipes; }
+  save();
+}
+
+// Restore removed recipes (remove from recipesRemove)
+function restorePackRecipes(packId, keys) {
+  const pack = getPack(packId);
+  const keySet = new Set(keys);
+  pack.recipesRemove = (pack.recipesRemove || []).filter(k => !keySet.has(k));
+  save();
 }
 
 // ── Pack icons ──
@@ -348,8 +466,17 @@ function removePackIcon(packId, elId) {
 // ── Pack elements ──
 function addPackElement(packId, def) {
   const pack = getPack(packId);
+  // Un-remove if it was a removed base element
+  if (def.id && (pack.elementsRemove || []).includes(def.id)) {
+    pack.elementsRemove = pack.elementsRemove.filter(id => id !== def.id);
+    save();
+    // Return base element def (the element already exists in base)
+    const baseDef = baseElementEntries.find(([id]) => id === def.id)?.[1];
+    return baseDef ? { ...baseDef } : { id: def.id };
+  }
   const existingIds = new Set([
     ...baseElementEntries.map(([id]) => id),
+    ...(editorData.elementsAdd || []).map(e => e.id),
     ...(pack.elementsAdd || []).map(e => e.id),
   ]);
   const el = validateElementDef(def, existingIds);
@@ -359,26 +486,52 @@ function addPackElement(packId, def) {
   return el;
 }
 
-function removePackElement(packId, elId) {
+// Remove one or more elements from pack (adds to elementsRemove for base els, deletes pack custom)
+function removePackElements(packId, ids) {
   const pack = getPack(packId);
-  const idx = (pack.elementsAdd || []).findIndex(e => e.id === elId);
-  if (idx === -1) return null;
-  pack.elementsAdd.splice(idx, 1);
-  delete (pack.icons || {})[elId];
+  pack.elementsRemove = pack.elementsRemove || [];
+  pack.elementsAdd    = pack.elementsAdd    || [];
+  for (const elId of ids) {
+    // Pack custom element → delete entirely
+    const addIdx = pack.elementsAdd.findIndex(e => e.id === elId);
+    if (addIdx !== -1) {
+      pack.elementsAdd.splice(addIdx, 1);
+      delete (pack.icons || {})[elId];
+      continue;
+    }
+    // Base/global element → add to removal list
+    if (!pack.elementsRemove.includes(elId)) pack.elementsRemove.push(elId);
+  }
   save();
-  return elId;
+  return ids;
+}
+
+// Compat alias (single remove, keeps old API route working)
+function removePackElement(packId, elId) {
+  return removePackElements(packId, [elId]).length ? elId : null;
+}
+
+// Restore previously removed base elements
+function restorePackElements(packId, ids) {
+  const pack = getPack(packId);
+  const idSet = new Set(ids);
+  pack.elementsRemove = (pack.elementsRemove || []).filter(id => !idSet.has(id));
+  save();
 }
 
 // ── Pack import ──
 function importPack(packId, packDef) {
   if (!editorData.packs[packId]) throw new Error(`Pack not found: ${packId}`);
   if (typeof packDef !== 'object' || packDef === null) throw new Error('Invalid pack data');
+  const existingName = editorData.packs[packId].name;
   editorData.packs[packId] = {
-    name:        packDef.name        || editorData.packs[packId].name,
-    recipes:     packDef.recipes     || [],
-    icons:       packDef.icons       || {},
-    elementsAdd: packDef.elementsAdd || [],
-    starterIds:  packDef.starterIds  || [],
+    name:           packDef.name           || existingName,
+    recipesAdd:     packDef.recipesAdd     || packDef.recipes || [],
+    recipesRemove:  packDef.recipesRemove  || [],
+    elementsAdd:    packDef.elementsAdd    || [],
+    elementsRemove: packDef.elementsRemove || [],
+    icons:          packDef.icons          || {},
+    starterIds:     packDef.starterIds     || [],
   };
   save();
 }
@@ -409,9 +562,9 @@ module.exports = {
   addElement, removeElement,
   addRecipe, removeRecipe,
   getPackList, addPack, removePack, buildPackMaps, importPack,
-  addPackRecipe, removePackRecipe,
+  addPackRecipe, removePackRecipe, removePackRecipesBulk, removeAllBasePackRecipes, restorePackRecipes,
   setPackIcon, removePackIcon,
-  addPackElement, removePackElement,
+  addPackElement, removePackElement, removePackElements, restorePackElements,
   setPackStarters,
   getEditorData, save,
 };
