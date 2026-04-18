@@ -30,7 +30,7 @@ header {
 }
 header h1 { font-size: 1.2rem; font-weight: 700; }
 #status {
-  margin-left: auto; font-size: .85rem;
+  margin-left: 0; font-size: .85rem;
   padding: 4px 12px; border-radius: 20px;
   transition: opacity .4s;
   opacity: 0;
@@ -56,6 +56,19 @@ header h1 { font-size: 1.2rem; font-weight: 700; }
 
 .tab-content { display: none; padding: 20px; }
 .tab-content.active { display: block; }
+
+/* ── Pack bar ── */
+#pack-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 20px;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+}
+#pack-bar select {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 5px 10px; font-size: .85rem;
+}
+#pack-bar label { font-size: .85rem; color: var(--text2); }
+#pack-context-note { font-size: .8rem; color: var(--text2); font-style: italic; }
 
 /* ── Search / toolbar ── */
 .toolbar {
@@ -180,6 +193,10 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
 .el-chip.output { background: #2a3a6a; }
 .badge-base   { font-size: .7rem; background: #333; color: var(--text2); padding: 2px 6px; border-radius: 4px; }
 .badge-custom-r { font-size: .7rem; background: #1a4a2a; color: var(--green); padding: 2px 6px; border-radius: 4px; }
+.badge-pack   { font-size: .7rem; background: #2a1a4a; color: #a78bfa; padding: 2px 6px; border-radius: 4px; }
+
+/* ── Packs list ── */
+.pack-row-actions { display: flex; gap: 6px; }
 </style>
 </head>
 <body>
@@ -203,6 +220,15 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
   <button class="tab" data-tab="elements">Елементи (<span id="elements-count">0</span>)</button>
   <button class="tab" data-tab="packs">Паки (<span id="packs-count">0</span>)</button>
 </nav>
+
+<!-- Global pack selector — hidden on Паки tab -->
+<div id="pack-bar">
+  <label for="global-pack-sel">Пак:</label>
+  <select id="global-pack-sel">
+    <option value="">— Базова гра —</option>
+  </select>
+  <span id="pack-context-note"></span>
+</div>
 
 <!-- ICONS TAB -->
 <section id="tab-icons" class="tab-content active">
@@ -327,14 +353,29 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
 <section id="tab-packs" class="tab-content">
   <div class="toolbar">
     <button class="btn-primary" id="btn-add-pack">+ Новий пак</button>
+    <span style="font-size:.8rem;color:var(--text2)">Вибери пак у селекторі вгорі щоб редагувати його іконки, рецепти та елементи</span>
   </div>
-  <div id="packs-list"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Назва</th>
+        <th>ID</th>
+        <th>Рецептів</th>
+        <th>Елементів</th>
+        <th>Іконок</th>
+        <th>Стартерів</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="packs-tbody"></tbody>
+  </table>
 </section>
 
 <!-- UPLOAD MODAL -->
 <div class="modal-overlay hidden" id="upload-modal">
   <div class="modal-box">
     <h3>Завантажити іконку для <strong id="upload-el-name"></strong></h3>
+    <div id="upload-pack-note" style="font-size:.8rem;color:#a78bfa;margin-bottom:10px;display:none"></div>
     <div class="modal-current">
       <div class="modal-current-label">Поточна іконка:</div>
       <div class="modal-icon-preview" id="modal-current-icon"></div>
@@ -353,12 +394,29 @@ tbody td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
   </div>
 </div>
 
+<!-- PACK STARTERS MODAL -->
+<div class="modal-overlay hidden" id="starters-modal">
+  <div class="modal-box" style="width:420px">
+    <h3>Стартові елементи паку <strong id="starters-pack-name"></strong></h3>
+    <p style="font-size:.8rem;color:var(--text2);margin-bottom:12px">Ctrl+click для вибору кількох</p>
+    <select id="starters-select" multiple style="width:100%;height:200px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px"></select>
+    <div class="modal-actions">
+      <button class="btn-primary" id="btn-starters-save">Зберегти</button>
+      <button class="btn-ghost"   id="btn-starters-cancel">Скасувати</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let allElements = [], allRecipes = [], elementById = {};
+let allPacks = [];           // [{ id, name, recipeCount, elementCount, iconCount, starterIds }]
+let currentPackId = null;    // null = base game
+let currentPackData = null;  // { recipes, icons, elementsAdd, starterIds }
 let uploadTargetId = null, uploadDataUri = null;
+let startersPackId = null;
 
 // ── Status flash ───────────────────────────────────────────────────────────────
 let statusTimer;
@@ -396,38 +454,87 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    // Hide pack-bar on Паки tab (it has its own pack management)
+    document.getElementById('pack-bar').style.display =
+      btn.dataset.tab === 'packs' ? 'none' : '';
   });
 });
+
+// ── Pack selector ─────────────────────────────────────────────────────────────
+async function loadPacks() {
+  try {
+    allPacks = await fetch('/api/admin/packs').then(r => r.json());
+  } catch(_) { allPacks = []; }
+  document.getElementById('packs-count').textContent = allPacks.length;
+  renderPacksTable();
+  rebuildPackSelector();
+}
+
+function rebuildPackSelector() {
+  const sel = document.getElementById('global-pack-sel');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— Базова гра —</option>' +
+    allPacks.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  // Restore previous selection if still exists
+  if (prev && allPacks.find(p => p.id === prev)) sel.value = prev;
+  else { sel.value = ''; currentPackId = null; currentPackData = null; }
+  updatePackContextNote();
+}
+
+document.getElementById('global-pack-sel').addEventListener('change', async e => {
+  currentPackId = e.target.value || null;
+  currentPackData = null;
+  if (currentPackId) {
+    try {
+      const full = await fetch('/api/admin/export').then(r => r.json());
+      currentPackData = full.packs?.[currentPackId] || { recipes:[], icons:{}, elementsAdd:[], starterIds:[] };
+    } catch(_) { currentPackData = { recipes:[], icons:{}, elementsAdd:[], starterIds:[] }; }
+  }
+  updatePackContextNote();
+  renderIconGrid();
+  renderRecipesTable();
+  renderElementsTable();
+});
+
+function updatePackContextNote() {
+  const note = document.getElementById('pack-context-note');
+  if (!currentPackId) { note.textContent = ''; return; }
+  const p = allPacks.find(x => x.id === currentPackId);
+  note.textContent = p ? `редагуєш пак «${p.name}»` : '';
+}
 
 // ── Icon grid ─────────────────────────────────────────────────────────────────
 function renderIconGrid() {
   const q          = document.getElementById('icon-search').value.toLowerCase();
   const customOnly = document.getElementById('show-custom-only').checked;
+  const packIcons  = currentPackData?.icons || {};
 
-  const filtered = allElements.filter(e =>
-    (!q || e.name.toLowerCase().includes(q) || e.id.includes(q)) &&
-    (!customOnly || e.isCustomIcon)
-  );
+  const filtered = allElements.filter(e => {
+    if (q && !e.name.toLowerCase().includes(q) && !e.id.includes(q)) return false;
+    const hasCustom = currentPackId ? !!packIcons[e.id] : e.isCustomIcon;
+    if (customOnly && !hasCustom) return false;
+    return true;
+  });
 
   const grid = document.getElementById('icon-grid');
   grid.innerHTML = '';
 
   for (const e of filtered) {
-    const card = document.createElement('div');
-    card.className = 'icon-card' + (e.isCustomIcon ? ' custom' : '');
-    card.dataset.id = e.id;
-
-    const iconHtml = e.icon
-      ? (e.icon.startsWith('data:')
-          ? `<img src="${e.icon}" alt="${e.name}">`
-          : e.icon)
+    const hasCustom = currentPackId ? !!packIcons[e.id] : e.isCustomIcon;
+    // Show pack icon if available, else element's current icon
+    const displayIcon = (currentPackId && packIcons[e.id]) ? packIcons[e.id] : e.icon;
+    const iconHtml = displayIcon
+      ? (displayIcon.startsWith('data:') ? `<img src="${displayIcon}" alt="${e.name}">` : displayIcon)
       : '';
 
+    const card = document.createElement('div');
+    card.className = 'icon-card' + (hasCustom ? ' custom' : '');
+    card.dataset.id = e.id;
     card.innerHTML = `
       <div class="icon-preview">${iconHtml}</div>
       <div class="icon-name">${e.name}</div>
       <div class="icon-id">${e.id}</div>
-      ${e.isCustomIcon ? '<span class="badge-custom">C</span>' : ''}
+      ${hasCustom ? '<span class="badge-custom">C</span>' : ''}
     `;
 
     card.addEventListener('click', ev => {
@@ -435,7 +542,7 @@ function renderIconGrid() {
       openUploadModal(e.id);
     });
 
-    if (e.isCustomIcon) {
+    if (hasCustom) {
       const revert = document.createElement('button');
       revert.className = 'btn-revert';
       revert.textContent = '↩ Скинути';
@@ -457,16 +564,23 @@ function openUploadModal(id) {
   const el = elementById[id];
   document.getElementById('upload-el-name').textContent = el.name;
 
+  const packNote = document.getElementById('upload-pack-note');
+  if (currentPackId) {
+    const p = allPacks.find(x => x.id === currentPackId);
+    packNote.textContent = `Іконка буде збережена лише для паку «${p?.name || currentPackId}»`;
+    packNote.style.display = '';
+  } else {
+    packNote.style.display = 'none';
+  }
+
+  const displayIcon = (currentPackId && currentPackData?.icons?.[id]) ? currentPackData.icons[id] : el.icon;
   const currentIcon = document.getElementById('modal-current-icon');
-  currentIcon.innerHTML = el.icon
-    ? (el.icon.startsWith('data:')
-        ? `<img src="${el.icon}" style="width:40px;height:40px;object-fit:contain">`
-        : el.icon)
+  currentIcon.innerHTML = displayIcon
+    ? (displayIcon.startsWith('data:') ? `<img src="${displayIcon}" style="width:40px;height:40px;object-fit:contain">` : displayIcon)
     : '—';
 
-  const preview = document.getElementById('upload-new-preview');
-  preview.style.display = 'none';
-  preview.src = '';
+  document.getElementById('upload-new-preview').style.display = 'none';
+  document.getElementById('upload-new-preview').src = '';
   document.getElementById('upload-file').value = '';
   document.getElementById('btn-upload-save').disabled = true;
   document.getElementById('size-warning').style.display = 'none';
@@ -476,22 +590,18 @@ function openUploadModal(id) {
 document.getElementById('upload-area').addEventListener('click', () => {
   document.getElementById('upload-file').click();
 });
-
 document.getElementById('upload-area').addEventListener('dragover', e => e.preventDefault());
 document.getElementById('upload-area').addEventListener('drop', e => {
   e.preventDefault();
   const file = e.dataTransfer.files[0];
   if (file) handleFileSelect(file);
 });
-
 document.getElementById('upload-file').addEventListener('change', e => {
   if (e.target.files[0]) handleFileSelect(e.target.files[0]);
 });
 
 function handleFileSelect(file) {
-  const warn = document.getElementById('size-warning');
-  warn.style.display = file.size > 300_000 ? 'block' : 'none';
-
+  document.getElementById('size-warning').style.display = file.size > 300_000 ? 'block' : 'none';
   const reader = new FileReader();
   reader.onload = ev => {
     uploadDataUri = ev.target.result;
@@ -506,19 +616,32 @@ function handleFileSelect(file) {
 document.getElementById('btn-upload-save').addEventListener('click', async () => {
   if (!uploadDataUri || !uploadTargetId) return;
   try {
-    const res = await fetch('/api/admin/icon', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: uploadTargetId, data: uploadDataUri }),
-    });
+    let res;
+    if (currentPackId) {
+      res = await fetch(`/api/admin/pack/${currentPackId}/icon`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elId: uploadTargetId, data: uploadDataUri }),
+      });
+    } else {
+      res = await fetch('/api/admin/icon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: uploadTargetId, data: uploadDataUri }),
+      });
+      // Update global state
+      const el = elementById[uploadTargetId];
+      if (el) { el.icon = uploadDataUri; el.isCustomIcon = true; }
+    }
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
-    // Update local state
-    const el = elementById[uploadTargetId];
-    el.icon = uploadDataUri;
-    el.isCustomIcon = true;
+    if (currentPackId && currentPackData) {
+      currentPackData.icons = currentPackData.icons || {};
+      currentPackData.icons[uploadTargetId] = uploadDataUri;
+    }
     closeModal();
     renderIconGrid();
+    await refreshPackCounts();
     showStatus('Іконку збережено ✓');
   } catch(e) {
     showStatus('Помилка: ' + e.message, false);
@@ -531,23 +654,29 @@ document.getElementById('upload-modal').addEventListener('click', e => {
 });
 function closeModal() {
   document.getElementById('upload-modal').classList.add('hidden');
-  uploadTargetId = null;
-  uploadDataUri = null;
+  uploadTargetId = null; uploadDataUri = null;
 }
 
 async function revertIcon(id) {
   try {
-    const res = await fetch(`/api/admin/icon/${id}`, { method: 'DELETE' });
+    let res;
+    if (currentPackId) {
+      res = await fetch(`/api/admin/pack/${currentPackId}/icon/${id}`, { method: 'DELETE' });
+    } else {
+      res = await fetch(`/api/admin/icon/${id}`, { method: 'DELETE' });
+    }
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
-    const el = elementById[id];
-    el.icon = json.icon || '';
-    el.isCustomIcon = false;
-    // Refresh icon from server (SVG is returned in fresh data)
-    const fresh = await fetch('/api/admin/data').then(r => r.json());
-    const freshEl = fresh.elements.find(e => e.id === id);
-    if (freshEl) { el.icon = freshEl.icon; el.isCustomIcon = false; }
+    if (!currentPackId) {
+      // Refresh global icon from server
+      const fresh = await fetch('/api/admin/data').then(r => r.json());
+      const freshEl = fresh.elements.find(e => e.id === id);
+      if (freshEl) { elementById[id].icon = freshEl.icon; elementById[id].isCustomIcon = false; }
+    } else if (currentPackData?.icons) {
+      delete currentPackData.icons[id];
+    }
     renderIconGrid();
+    await refreshPackCounts();
     showStatus('Іконку скинуто ✓');
   } catch(e) {
     showStatus('Помилка: ' + e.message, false);
@@ -555,11 +684,29 @@ async function revertIcon(id) {
 }
 
 // ── Recipes ───────────────────────────────────────────────────────────────────
-function renderRecipesTable() {
-  document.getElementById('recipe-count').textContent = allRecipes.length;
-  const q = document.getElementById('recipe-search').value.toLowerCase();
+function getDisplayedRecipes() {
+  if (currentPackId && currentPackData) {
+    return (currentPackData.recipes || []).map(r => {
+      const key = [...r.inputs].sort().join('+');
+      return {
+        key, inputs: r.inputs, output: r.output,
+        outputName: elementById[r.output]?.name || r.output,
+        isCustom: true, isPack: true,
+      };
+    });
+  }
+  return allRecipes;
+}
 
-  const filtered = allRecipes.filter(r => {
+function renderRecipesTable() {
+  const recipes = getDisplayedRecipes();
+  const label = currentPackId
+    ? `${recipes.length} (пак)`
+    : recipes.length;
+  document.getElementById('recipe-count').textContent = label;
+
+  const q = document.getElementById('recipe-search').value.toLowerCase();
+  const filtered = recipes.filter(r => {
     if (!q) return true;
     if (r.output.includes(q) || r.outputName.toLowerCase().includes(q)) return true;
     return r.inputs.some(id => id.includes(q) || (elementById[id]?.name || '').toLowerCase().includes(q));
@@ -571,21 +718,18 @@ function renderRecipesTable() {
   for (const r of filtered) {
     const tr = document.createElement('tr');
     tr.className = r.isCustom ? 'custom-row' : 'base-row';
-
     const inputsHtml = r.inputs
       .map(id => `<span class="el-chip">${elementById[id]?.name || id}</span>`)
       .join(' + ');
-
+    const badge = r.isPack
+      ? '<span class="badge-pack">Пак</span>'
+      : (r.isCustom ? '<span class="badge-custom-r">Custom</span>' : '<span class="badge-base">Base</span>');
     tr.innerHTML = `
       <td>${inputsHtml}</td>
       <td>→</td>
       <td><span class="el-chip output">${r.outputName}</span></td>
-      <td>${r.isCustom
-        ? '<span class="badge-custom-r">Custom</span>'
-        : '<span class="badge-base">Base</span>'}</td>
-      <td>
-        <button class="btn-danger btn-sm btn-del-recipe" data-key="${r.key}">Видалити</button>
-      </td>
+      <td>${badge}</td>
+      <td><button class="btn-danger btn-sm btn-del-recipe" data-key="${r.key}">Видалити</button></td>
     `;
     tbody.appendChild(tr);
   }
@@ -598,19 +742,35 @@ function renderRecipesTable() {
 document.getElementById('recipe-search').addEventListener('input', renderRecipesTable);
 
 async function deleteRecipe(key) {
-  const r = allRecipes.find(r => r.key === key);
+  const recipes = getDisplayedRecipes();
+  const r = recipes.find(r => r.key === key);
   const label = r ? `${r.inputs.join(' + ')} → ${r.outputName}` : key;
   if (!confirm(`Видалити рецепт: ${label}?`)) return;
   try {
-    const res = await fetch('/api/admin/recipe', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
+    let res;
+    if (currentPackId) {
+      res = await fetch(`/api/admin/pack/${currentPackId}/recipe`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
+    } else {
+      res = await fetch('/api/admin/recipe', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
+      allRecipes = allRecipes.filter(r => r.key !== key);
+    }
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
-    allRecipes = allRecipes.filter(r => r.key !== key);
+    if (currentPackId && currentPackData) {
+      currentPackData.recipes = (currentPackData.recipes || []).filter(
+        r => [...r.inputs].sort().join('+') !== key
+      );
+    }
     renderRecipesTable();
+    await refreshPackCounts();
     showStatus('Рецепт видалено ✓');
   } catch(e) {
     showStatus('Помилка: ' + e.message, false);
@@ -621,7 +781,6 @@ async function deleteRecipe(key) {
 function populateSelects() {
   const sorted = [...allElements].sort((a, b) => a.name.localeCompare(b.name));
   const opts = sorted.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
-
   document.querySelectorAll('.input-sel').forEach(sel => {
     sel.innerHTML = '<option value="">—</option>' + opts;
   });
@@ -631,7 +790,6 @@ function populateSelects() {
 document.getElementById('btn-add-recipe').addEventListener('click', () => {
   document.getElementById('add-recipe-form').classList.toggle('hidden');
 });
-
 document.getElementById('btn-cancel-recipe').addEventListener('click', () => {
   document.getElementById('add-recipe-form').classList.add('hidden');
   document.querySelectorAll('.input-sel').forEach(s => s.value = '');
@@ -639,30 +797,40 @@ document.getElementById('btn-cancel-recipe').addEventListener('click', () => {
 });
 
 document.getElementById('btn-save-recipe').addEventListener('click', async () => {
-  const inputs = [...document.querySelectorAll('.input-sel')]
-    .map(s => s.value).filter(Boolean);
+  const inputs = [...document.querySelectorAll('.input-sel')].map(s => s.value).filter(Boolean);
   const output = document.getElementById('output-sel').value;
-
   if (inputs.length === 0) return showStatus('Вибери хоча б один інгредієнт', false);
   if (!output) return showStatus('Вибери результат', false);
 
   try {
-    const res = await fetch('/api/admin/recipe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inputs, output }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error);
-
-    const key = json.key;
-    allRecipes.push({
-      key, inputs: key.split('+'), output,
-      outputName: elementById[output]?.name || output,
-      isCustom: true,
-    });
+    let res, json;
+    if (currentPackId) {
+      res = await fetch(`/api/admin/pack/${currentPackId}/recipe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs, output }),
+      });
+      json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      if (currentPackData) {
+        currentPackData.recipes = currentPackData.recipes || [];
+        currentPackData.recipes.push({ inputs, output });
+      }
+    } else {
+      res = await fetch('/api/admin/recipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs, output }),
+      });
+      json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      const key = json.key;
+      allRecipes.push({ key, inputs: key.split('+'), output,
+        outputName: elementById[output]?.name || output, isCustom: true });
+    }
     document.getElementById('btn-cancel-recipe').click();
     renderRecipesTable();
+    await refreshPackCounts();
     showStatus('Рецепт додано ✓');
   } catch(e) {
     showStatus('Помилка: ' + e.message, false);
@@ -672,17 +840,23 @@ document.getElementById('btn-save-recipe').addEventListener('click', async () =>
 // ── Elements ──────────────────────────────────────────────────────────────────
 let elIconDataUri = null;
 
+function getDisplayedElements() {
+  if (currentPackId && currentPackData) {
+    return (currentPackData.elementsAdd || []).map(e => ({ ...e, isCustomElement: true }));
+  }
+  return allElements.filter(e => e.isCustomElement);
+}
+
 function renderElementsTable() {
-  const custom = allElements.filter(e => e.isCustomElement);
-  document.getElementById('elements-count').textContent = custom.length;
+  const custom = getDisplayedElements();
+  const label = currentPackId ? `${custom.length} (пак)` : custom.length;
+  document.getElementById('elements-count').textContent = label;
   const tbody = document.getElementById('elements-tbody');
   tbody.innerHTML = '';
   for (const e of custom) {
     const tr = document.createElement('tr');
     const iconHtml = e.icon
-      ? (e.icon.startsWith('data:')
-          ? `<img src="${e.icon}" style="width:32px;height:32px;object-fit:contain">`
-          : e.icon)
+      ? (e.icon.startsWith('data:') ? `<img src="${e.icon}" style="width:32px;height:32px;object-fit:contain">` : e.icon)
       : '—';
     tr.innerHTML = `
       <td><div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center">${iconHtml}</div></td>
@@ -700,16 +874,28 @@ function renderElementsTable() {
 }
 
 async function deleteElement(id) {
-  const e = elementById[id];
-  if (!confirm(`Видалити елемент "${e?.name || id}"? Рецепти що його використовують перестануть працювати.`)) return;
+  const el = currentPackId
+    ? (currentPackData?.elementsAdd || []).find(e => e.id === id)
+    : elementById[id];
+  if (!confirm(`Видалити елемент "${el?.name || id}"?`)) return;
   try {
-    const res = await fetch(`/api/admin/element/${id}`, { method: 'DELETE' });
+    let res;
+    if (currentPackId) {
+      res = await fetch(`/api/admin/pack/${currentPackId}/element/${id}`, { method: 'DELETE' });
+    } else {
+      res = await fetch(`/api/admin/element/${id}`, { method: 'DELETE' });
+    }
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
-    allElements = allElements.filter(e => e.id !== id);
-    delete elementById[id];
-    populateSelects();
+    if (currentPackId && currentPackData) {
+      currentPackData.elementsAdd = (currentPackData.elementsAdd || []).filter(e => e.id !== id);
+    } else {
+      allElements = allElements.filter(e => e.id !== id);
+      delete elementById[id];
+      populateSelects();
+    }
     renderElementsTable();
+    await refreshPackCounts();
     showStatus('Елемент видалено ✓');
   } catch(e) { showStatus('Помилка: ' + e.message, false); }
 }
@@ -717,7 +903,6 @@ async function deleteElement(id) {
 document.getElementById('btn-add-element').addEventListener('click', () => {
   document.getElementById('add-element-form').classList.toggle('hidden');
 });
-
 document.getElementById('btn-cancel-element').addEventListener('click', () => {
   document.getElementById('add-element-form').classList.add('hidden');
   document.getElementById('el-id').value = '';
@@ -728,19 +913,15 @@ document.getElementById('btn-cancel-element').addEventListener('click', () => {
   document.getElementById('el-icon-preview').style.display = 'none';
 });
 
-document.getElementById('el-upload-area').addEventListener('click', () => {
-  document.getElementById('el-upload-file').click();
-});
+document.getElementById('el-upload-area').addEventListener('click', () => document.getElementById('el-upload-file').click());
 document.getElementById('el-upload-area').addEventListener('dragover', e => e.preventDefault());
 document.getElementById('el-upload-area').addEventListener('drop', e => {
   e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (file) handleElFile(file);
+  if (e.dataTransfer.files[0]) handleElFile(e.dataTransfer.files[0]);
 });
 document.getElementById('el-upload-file').addEventListener('change', e => {
   if (e.target.files[0]) handleElFile(e.target.files[0]);
 });
-
 function handleElFile(file) {
   const reader = new FileReader();
   reader.onload = ev => {
@@ -758,340 +939,99 @@ document.getElementById('btn-save-element').addEventListener('click', async () =
   const tier     = Number(document.getElementById('el-tier').value);
   const category = document.getElementById('el-category').value;
   const isStarter = document.getElementById('el-starter').checked;
-
-  if (!id)          return showStatus('Введи ID', false);
-  if (!name)        return showStatus('Введи назву', false);
+  if (!id)           return showStatus('Введи ID', false);
+  if (!name)         return showStatus('Введи назву', false);
   if (!elIconDataUri) return showStatus('Завантаж іконку', false);
 
   try {
-    const res = await fetch('/api/admin/element', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, name, tier, category, isStarter, icon: elIconDataUri }),
-    });
+    let res;
+    if (currentPackId) {
+      res = await fetch(`/api/admin/pack/${currentPackId}/element`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, tier, category, isStarter, icon: elIconDataUri }),
+      });
+    } else {
+      res = await fetch('/api/admin/element', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, tier, category, isStarter, icon: elIconDataUri }),
+      });
+    }
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
 
     const newEl = { id, name, tier, category, isStarter, icon: elIconDataUri,
                     isCustomIcon: false, isCustomElement: true };
-    allElements.push(newEl);
-    elementById[id] = newEl;
-    populateSelects();
+    if (currentPackId && currentPackData) {
+      currentPackData.elementsAdd = currentPackData.elementsAdd || [];
+      currentPackData.elementsAdd.push(newEl);
+    } else {
+      allElements.push(newEl);
+      elementById[id] = newEl;
+      populateSelects();
+    }
     renderElementsTable();
+    await refreshPackCounts();
     document.getElementById('btn-cancel-element').click();
     showStatus('Елемент додано ✓');
   } catch(e) { showStatus('Помилка: ' + e.message, false); }
 });
 
-// ── Packs ─────────────────────────────────────────────────────────────────────
-let allPacks = []; // [{ id, name, recipeCount, elementCount, iconCount, starterIds }]
-let activePack = null; // id of currently open pack editor
-
-async function loadPacks() {
-  const data = await fetch('/api/admin/packs').then(r => r.json());
-  allPacks = data;
+// ── Packs tab ─────────────────────────────────────────────────────────────────
+function renderPacksTable() {
   document.getElementById('packs-count').textContent = allPacks.length;
-  renderPacksList();
-}
-
-function renderPacksList() {
-  document.getElementById('packs-count').textContent = allPacks.length;
-  const container = document.getElementById('packs-list');
-  container.innerHTML = '';
-
-  if (allPacks.length === 0) {
-    container.innerHTML = '<p style="color:var(--text2);padding:16px">Паків ще немає. Натисни «+ Новий пак».</p>';
-    return;
-  }
-
+  const tbody = document.getElementById('packs-tbody');
+  tbody.innerHTML = '';
   for (const p of allPacks) {
-    const card = document.createElement('div');
-    card.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden';
-    card.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer" class="pack-header" data-id="${p.id}">
-        <div style="flex:1">
-          <strong>${p.name}</strong>
-          <span style="font-size:.8rem;color:var(--text2);margin-left:10px">${p.id}</span>
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${p.name}</strong></td>
+      <td><code>${p.id}</code></td>
+      <td>${p.recipeCount}</td>
+      <td>${p.elementCount}</td>
+      <td>${p.iconCount}</td>
+      <td>${(p.starterIds || []).length}</td>
+      <td>
+        <div class="pack-row-actions">
+          <button class="btn-ghost btn-sm pack-select-btn" data-id="${p.id}">Редагувати</button>
+          <button class="btn-ghost btn-sm pack-starters-btn" data-id="${p.id}">Стартери</button>
+          <button class="btn-ghost btn-sm pack-export-btn" data-id="${p.id}">⬇</button>
+          <button class="btn-danger btn-sm pack-del-btn" data-id="${p.id}">Видалити</button>
         </div>
-        <span style="font-size:.8rem;color:var(--text2)">${p.recipeCount} рецептів · ${p.elementCount} ел. · ${p.iconCount} іконок</span>
-        <button class="btn-ghost btn-sm pack-export-btn" data-id="${p.id}">⬇</button>
-        <button class="btn-danger btn-sm pack-del-btn" data-id="${p.id}">Видалити</button>
-        <span class="pack-toggle" data-id="${p.id}" style="color:var(--text2);font-size:1.1rem">▶</span>
-      </div>
-      <div class="pack-editor hidden" id="pack-editor-${p.id}"></div>
+      </td>
     `;
-    container.appendChild(card);
-
-    card.querySelector('.pack-header').addEventListener('click', e => {
-      if (e.target.classList.contains('pack-del-btn') || e.target.classList.contains('pack-export-btn')) return;
-      togglePackEditor(p.id);
-    });
-    card.querySelector('.pack-del-btn').addEventListener('click', e => {
-      e.stopPropagation(); deletePack(p.id);
-    });
-    card.querySelector('.pack-export-btn').addEventListener('click', e => {
-      e.stopPropagation(); exportPack(p.id);
-    });
+    tbody.appendChild(tr);
   }
-}
-
-function togglePackEditor(packId) {
-  const editor = document.getElementById(`pack-editor-${packId}`);
-  const toggle = document.querySelector(`.pack-toggle[data-id="${packId}"]`);
-  if (!editor) return;
-  const isOpen = !editor.classList.contains('hidden');
-  if (isOpen) {
-    editor.classList.add('hidden');
-    toggle.textContent = '▶';
-    if (activePack === packId) activePack = null;
-  } else {
-    editor.classList.remove('hidden');
-    toggle.textContent = '▼';
-    activePack = packId;
-    renderPackEditor(packId);
-  }
-}
-
-function renderPackEditor(packId) {
-  const pack = allPacks.find(p => p.id === packId);
-  if (!pack) return;
-  const container = document.getElementById(`pack-editor-${packId}`);
-  container.style.cssText = 'border-top:1px solid var(--border);padding:16px';
-
-  // Fetch full pack data
-  fetch(`/api/admin/packs`).then(r => r.json()).then(packs => {
-    // We need the full pack data — fetch export endpoint
-    return fetch(`/api/admin/export`).then(r => r.json());
-  }).then(editorData => {
-    const packDef = editorData.packs?.[packId] || { recipes: [], icons: {}, elementsAdd: [], starterIds: [] };
-
-    // Starters editor
-    const allElOptions = allElements.sort((a,b) => a.name.localeCompare(b.name))
-      .map(e => {
-        const sel = (packDef.starterIds || []).includes(e.id) ? 'selected' : '';
-        return `<option value="${e.id}" ${sel}>${e.name} (${e.id})</option>`;
-      }).join('');
-
-    // Build pack icon map
-    const packIcons = packDef.icons || {};
-
-    // Icon overrides mini-grid (show only elements that have custom icon in this pack)
-    const customIconEls = allElements.filter(e => packIcons[e.id]);
-
-    container.innerHTML = `
-      <!-- Starters -->
-      <div style="margin-bottom:20px">
-        <div style="font-size:.85rem;font-weight:700;margin-bottom:8px">Стартові елементи</div>
-        <select id="pack-starters-${packId}" multiple style="width:100%;height:120px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px">
-          ${allElOptions}
-        </select>
-        <button class="btn-ghost btn-sm" id="pack-save-starters-${packId}" style="margin-top:6px">Зберегти стартери</button>
-      </div>
-
-      <!-- Recipes -->
-      <div style="margin-bottom:20px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="font-size:.85rem;font-weight:700">Рецепти паку (${packDef.recipes.length})</div>
-          <button class="btn-primary btn-sm" id="pack-add-recipe-btn-${packId}">+ Рецепт</button>
-        </div>
-        <div id="pack-add-recipe-form-${packId}" class="add-recipe-form hidden" style="margin-bottom:10px">
-          <div class="form-row">
-            <label>Інгредієнти:</label>
-            <div class="input-selectors">
-              <select class="pack-input-sel" data-pack="${packId}"><option value="">—</option>${allElements.sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select>
-              <select class="pack-input-sel" data-pack="${packId}"><option value="">—</option>${allElements.sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select>
-              <select class="pack-input-sel" data-pack="${packId}"><option value="">—</option>${allElements.sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select>
-            </div>
-          </div>
-          <div class="form-row">
-            <label>Результат:</label>
-            <select class="pack-output-sel" id="pack-output-sel-${packId}"><option value="">—</option>${allElements.sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select>
-          </div>
-          <div class="form-actions">
-            <button class="btn-primary btn-sm" id="pack-save-recipe-${packId}">Зберегти</button>
-            <button class="btn-ghost btn-sm" id="pack-cancel-recipe-${packId}">Скасувати</button>
-          </div>
-        </div>
-        <div id="pack-recipes-table-${packId}"></div>
-      </div>
-
-      <!-- Icons -->
-      <div style="margin-bottom:20px">
-        <div style="font-size:.85rem;font-weight:700;margin-bottom:8px">Іконки паку</div>
-        <p style="font-size:.8rem;color:var(--text2);margin-bottom:10px">Клікни на елемент в таблиці Іконок щоб змінити глобально, або тут — тільки для цього паку.</p>
-        <div id="pack-icons-grid-${packId}" style="display:flex;flex-wrap:wrap;gap:8px">
-          ${customIconEls.map(e => {
-            const src = packIcons[e.id];
-            const iconH = src.startsWith('data:') ? `<img src="${src}" style="width:32px;height:32px;object-fit:contain">` : src;
-            return `<div style="background:var(--bg3);border-radius:8px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:70px">
-              ${iconH}
-              <div style="font-size:.7rem;text-align:center">${e.name}</div>
-              <button class="btn-danger btn-sm pack-revert-icon" data-pack="${packId}" data-el="${e.id}">↩</button>
-            </div>`;
-          }).join('') || '<span style="font-size:.8rem;color:var(--text2)">Кастомних іконок немає — використовуються дефолтні SVG</span>'}
-        </div>
-        <div style="margin-top:10px">
-          <label style="font-size:.8rem;color:var(--text2);display:block;margin-bottom:4px">Завантажити іконку для елемента:</label>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <select id="pack-icon-el-${packId}" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:.85rem">
-              <option value="">— елемент —</option>${allElements.sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}
-            </select>
-            <label class="btn-ghost btn-sm" style="cursor:pointer">
-              Вибрати файл
-              <input type="file" accept="image/*" id="pack-icon-file-${packId}" style="display:none">
-            </label>
-            <span id="pack-icon-preview-wrap-${packId}"></span>
-          </div>
-        </div>
-      </div>
-    `;
-
-    renderPackRecipesTable(packId, packDef.recipes);
-
-    // Starters save
-    document.getElementById(`pack-save-starters-${packId}`).addEventListener('click', async () => {
-      const sel = document.getElementById(`pack-starters-${packId}`);
-      const ids = [...sel.selectedOptions].map(o => o.value);
-      try {
-        const res = await fetch(`/api/admin/pack/${packId}/starters`, {
-          method: 'PUT', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ starterIds: ids }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error);
-        showStatus('Стартери збережено ✓');
-        const p = allPacks.find(x => x.id === packId);
-        if (p) p.starterIds = ids;
-      } catch(e) { showStatus('Помилка: ' + e.message, false); }
-    });
-
-    // Recipe form toggle
-    document.getElementById(`pack-add-recipe-btn-${packId}`).addEventListener('click', () => {
-      document.getElementById(`pack-add-recipe-form-${packId}`).classList.toggle('hidden');
-    });
-    document.getElementById(`pack-cancel-recipe-${packId}`).addEventListener('click', () => {
-      document.getElementById(`pack-add-recipe-form-${packId}`).classList.add('hidden');
-    });
-    document.getElementById(`pack-save-recipe-${packId}`).addEventListener('click', async () => {
-      const inputs = [...document.querySelectorAll(`.pack-input-sel[data-pack="${packId}"]`)]
-        .map(s => s.value).filter(Boolean);
-      const output = document.getElementById(`pack-output-sel-${packId}`).value;
-      if (!inputs.length) return showStatus('Вибери інгредієнти', false);
-      if (!output) return showStatus('Вибери результат', false);
-      try {
-        const res = await fetch(`/api/admin/pack/${packId}/recipe`, {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ inputs, output }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error);
-        // refresh editor
-        document.getElementById(`pack-add-recipe-form-${packId}`).classList.add('hidden');
-        showStatus('Рецепт додано ✓');
-        renderPackEditor(packId);
-        await refreshPackCount(packId);
-      } catch(e) { showStatus('Помилка: ' + e.message, false); }
-    });
-
-    // Icon upload
-    document.getElementById(`pack-icon-file-${packId}`).addEventListener('change', async e => {
-      const file = e.target.files[0];
-      const elId = document.getElementById(`pack-icon-el-${packId}`).value;
-      if (!file || !elId) { showStatus('Вибери елемент та файл', false); return; }
-      const reader = new FileReader();
-      reader.onload = async ev => {
-        const dataUri = ev.target.result;
-        document.getElementById(`pack-icon-preview-wrap-${packId}`).innerHTML =
-          `<img src="${dataUri}" style="width:32px;height:32px;border-radius:4px;object-fit:contain">`;
-        try {
-          const res = await fetch(`/api/admin/pack/${packId}/icon`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ elId, data: dataUri }),
-          });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error);
-          showStatus('Іконку збережено ✓');
-          renderPackEditor(packId);
-          refreshPackCount(packId);
-        } catch(err) { showStatus('Помилка: ' + err.message, false); }
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
-    });
-
-    // Revert pack icon buttons
-    container.querySelectorAll('.pack-revert-icon').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const pid = btn.dataset.pack, eid = btn.dataset.el;
-        const res = await fetch(`/api/admin/pack/${pid}/icon/${eid}`, { method: 'DELETE' });
-        const json = await res.json();
-        if (!res.ok) return showStatus('Помилка: ' + json.error, false);
-        showStatus('Іконку скинуто ✓');
-        renderPackEditor(pid);
-        refreshPackCount(pid);
-      });
+  tbody.querySelectorAll('.pack-select-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('global-pack-sel').value = btn.dataset.id;
+      document.getElementById('global-pack-sel').dispatchEvent(new Event('change'));
+      // Switch to icons tab
+      document.querySelector('.tab[data-tab="icons"]').click();
     });
   });
-}
-
-function renderPackRecipesTable(packId, recipes) {
-  const el = document.getElementById(`pack-recipes-table-${packId}`);
-  if (!el) return;
-  if (!recipes.length) {
-    el.innerHTML = '<p style="font-size:.8rem;color:var(--text2)">Рецептів ще немає</p>';
-    return;
-  }
-  el.innerHTML = `<table><thead><tr>
-    <th>Інгредієнти</th><th></th><th>Результат</th><th></th>
-  </tr></thead><tbody>
-    ${recipes.map(r => {
-      const key = [...r.inputs].sort().join('+');
-      const inHtml = r.inputs.map(id => `<span class="el-chip">${elementById[id]?.name || id}</span>`).join(' + ');
-      const outHtml = `<span class="el-chip output">${elementById[r.output]?.name || r.output}</span>`;
-      return `<tr>
-        <td>${inHtml}</td><td>→</td><td>${outHtml}</td>
-        <td><button class="btn-danger btn-sm pack-del-recipe" data-pack="${packId}" data-key="${key}">✕</button></td>
-      </tr>`;
-    }).join('')}
-  </tbody></table>`;
-
-  el.querySelectorAll('.pack-del-recipe').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const pid = btn.dataset.pack, key = btn.dataset.key;
-      const res = await fetch(`/api/admin/pack/${pid}/recipe`, {
-        method: 'DELETE', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ key }),
-      });
-      const json = await res.json();
-      if (!res.ok) return showStatus('Помилка: ' + json.error, false);
-      showStatus('Рецепт видалено ✓');
-      renderPackEditor(pid);
-      refreshPackCount(pid);
-    });
+  tbody.querySelectorAll('.pack-starters-btn').forEach(btn => {
+    btn.addEventListener('click', () => openStartersModal(btn.dataset.id));
   });
-}
-
-async function refreshPackCount(packId) {
-  const packs = await fetch('/api/admin/packs').then(r => r.json());
-  allPacks = packs;
-  document.getElementById('packs-count').textContent = allPacks.length;
-  // Update card subtitle without re-rendering (editor is open)
-  const p = allPacks.find(x => x.id === packId);
-  if (p) {
-    const header = document.querySelector(`.pack-header[data-id="${packId}"] span[style]`);
-    if (header) header.textContent = `${p.recipeCount} рецептів · ${p.elementCount} ел. · ${p.iconCount} іконок`;
-  }
+  tbody.querySelectorAll('.pack-export-btn').forEach(btn => {
+    btn.addEventListener('click', () => exportPack(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.pack-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => deletePack(btn.dataset.id));
+  });
 }
 
 document.getElementById('btn-add-pack').addEventListener('click', async () => {
   const name = prompt('Назва паку:');
-  if (!name) return;
+  if (!name?.trim()) return;
   const id = prompt('ID паку (лише a–z, 0–9, _):');
-  if (!id) return;
+  if (!id?.trim()) return;
   try {
     const res = await fetch('/api/admin/pack', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ id, name }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id.trim(), name: name.trim() }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
@@ -1101,16 +1041,24 @@ document.getElementById('btn-add-pack').addEventListener('click', async () => {
 });
 
 async function deletePack(packId) {
-  if (!confirm(`Видалити пак "${packId}"?`)) return;
-  const res = await fetch(`/api/admin/pack/${packId}`, { method: 'DELETE' });
-  const json = await res.json();
-  if (!res.ok) return showStatus('Помилка: ' + json.error, false);
-  showStatus('Пак видалено ✓');
-  await loadPacks();
+  const p = allPacks.find(x => x.id === packId);
+  if (!confirm(`Видалити пак «${p?.name || packId}»?`)) return;
+  try {
+    const res = await fetch(`/api/admin/pack/${packId}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    if (currentPackId === packId) {
+      currentPackId = null; currentPackData = null;
+    }
+    showStatus('Пак видалено ✓');
+    await loadPacks();
+    renderIconGrid(); renderRecipesTable(); renderElementsTable();
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
 }
 
-function exportPack(packId) {
-  fetch('/api/admin/export').then(r => r.json()).then(data => {
+async function exportPack(packId) {
+  try {
+    const data = await fetch('/api/admin/export').then(r => r.json());
     const packDef = data.packs?.[packId];
     if (!packDef) return showStatus('Пак не знайдено', false);
     const blob = new Blob([JSON.stringify({ id: packId, ...packDef }, null, 2)], { type: 'application/json' });
@@ -1118,8 +1066,64 @@ function exportPack(packId) {
     a.href = URL.createObjectURL(blob);
     a.download = `pack_${packId}.json`;
     a.click();
-  });
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
 }
+
+async function refreshPackCounts() {
+  try {
+    allPacks = await fetch('/api/admin/packs').then(r => r.json());
+    document.getElementById('packs-count').textContent = allPacks.length;
+    renderPacksTable();
+  } catch(_) {}
+}
+
+// ── Pack starters modal ───────────────────────────────────────────────────────
+async function openStartersModal(packId) {
+  startersPackId = packId;
+  const p = allPacks.find(x => x.id === packId);
+  document.getElementById('starters-pack-name').textContent = p?.name || packId;
+
+  // Load full pack data
+  const full = await fetch('/api/admin/export').then(r => r.json());
+  const packDef = full.packs?.[packId] || {};
+  const starterIds = new Set(packDef.starterIds || []);
+
+  // Build element list: base elements + pack elementsAdd
+  const packEls = [
+    ...allElements,
+    ...(packDef.elementsAdd || []).filter(e => !allElements.find(x => x.id === e.id)),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+
+  const sel = document.getElementById('starters-select');
+  sel.innerHTML = packEls.map(e =>
+    `<option value="${e.id}" ${starterIds.has(e.id) ? 'selected' : ''}>${e.name} (${e.id})</option>`
+  ).join('');
+
+  document.getElementById('starters-modal').classList.remove('hidden');
+}
+
+document.getElementById('btn-starters-save').addEventListener('click', async () => {
+  const sel = document.getElementById('starters-select');
+  const ids = [...sel.selectedOptions].map(o => o.value);
+  try {
+    const res = await fetch(`/api/admin/pack/${startersPackId}/starters`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ starterIds: ids }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    document.getElementById('starters-modal').classList.add('hidden');
+    showStatus(`Стартери збережено (${ids.length}) ✓`);
+    await refreshPackCounts();
+  } catch(e) { showStatus('Помилка: ' + e.message, false); }
+});
+document.getElementById('btn-starters-cancel').addEventListener('click', () => {
+  document.getElementById('starters-modal').classList.add('hidden');
+});
+document.getElementById('starters-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) document.getElementById('starters-modal').classList.add('hidden');
+});
 
 // ── Export / Import / Reset ───────────────────────────────────────────────────
 document.getElementById('btn-export').addEventListener('click', () => {
@@ -1141,17 +1145,19 @@ document.getElementById('import-file').addEventListener('change', async e => {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
+    currentPackId = null; currentPackData = null;
     showStatus('Імпортовано ✓');
     await init();
   } catch(e) { showStatus('Помилка імпорту: ' + e.message, false); }
 });
 
 document.getElementById('btn-reset').addEventListener('click', async () => {
-  if (!confirm('Скинути ВСІ кастомні іконки, рецепти та елементи до стандартних?')) return;
+  if (!confirm('Скинути ВСІ кастомні іконки, рецепти, елементи та паки до стандартних?')) return;
   try {
     const res = await fetch('/api/admin/reset', { method: 'POST' });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
+    currentPackId = null; currentPackData = null;
     showStatus('Скинуто до стандартних ✓');
     await init();
   } catch(e) { showStatus('Помилка: ' + e.message, false); }
