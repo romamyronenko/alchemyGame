@@ -26,10 +26,25 @@ const io     = new Server(server, { cors: { origin: '*' } });
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../client')));
 app.get('/', (_, res) => res.sendFile(path.join(__dirname, '../client/index.html')));
-app.get('/admin', (_, res) => res.sendFile(path.join(__dirname, '../client/admin.html')));
+
+// ─── Admin auth (HTTP Basic) ──────────────────────────────────────────────────
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+function adminAuth(req, res, next) {
+  if (!ADMIN_PASS) return next(); // no password configured → open access
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Basic ')) {
+    const decoded = Buffer.from(auth.slice(6), 'base64').toString();
+    const pass = decoded.slice(decoded.indexOf(':') + 1);
+    if (pass === ADMIN_PASS) return next();
+  }
+  res.set('WWW-Authenticate', 'Basic realm="Alchemy Admin"');
+  res.status(401).send('Unauthorized');
+}
+
+app.get('/admin', adminAuth, (_, res) => res.sendFile(path.join(__dirname, '../client/admin.html')));
 
 // ─── Admin API ────────────────────────────────────────────────────────────────
-app.get('/api/admin/data', (_, res) => {
+app.get('/api/admin/data', adminAuth, (_, res) => {
   const { icons, recipesAdd, recipesRemove } = editor.getEditorData();
   res.json({
     elements: ELEMENTS.map(e => ({
@@ -46,7 +61,7 @@ app.get('/api/admin/data', (_, res) => {
   });
 });
 
-app.post('/api/admin/icon', (req, res) => {
+app.post('/api/admin/icon', adminAuth, (req, res) => {
   const { id, data } = req.body || {};
   try {
     const def = editor.setIcon(id, data, elementMap);
@@ -55,13 +70,13 @@ app.post('/api/admin/icon', (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-app.delete('/api/admin/icon/:id', (req, res) => {
+app.delete('/api/admin/icon/:id', adminAuth, (req, res) => {
   const def = editor.removeIcon(req.params.id, elementMap, ICONS);
   if (!def) return res.status(404).json({ error: 'Unknown element' });
   res.json({ ok: true });
 });
 
-app.post('/api/admin/recipe', (req, res) => {
+app.post('/api/admin/recipe', adminAuth, (req, res) => {
   try {
     const result = editor.addRecipe(
       req.body.inputs, req.body.output,
@@ -70,7 +85,7 @@ app.post('/api/admin/recipe', (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-app.delete('/api/admin/recipe', (req, res) => {
+app.delete('/api/admin/recipe', adminAuth, (req, res) => {
   const removed = editor.removeRecipe(req.body?.key, recipeMap, reverseRecipeMap);
   if (!removed) return res.status(404).json({ error: 'Recipe not found' });
   res.json({ ok: true });

@@ -269,9 +269,9 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   transform: scale(1.05);
 }
 
-.element-card svg {
+.element-card svg, .element-card .el-icon-img {
   width: 44px; height: 44px;
-  pointer-events: none;
+  pointer-events: none; object-fit: contain;
 }
 
 .element-card .card-name {
@@ -309,9 +309,9 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   border-color: var(--accent);
 }
 
-.canvas-element svg {
+.canvas-element svg, .canvas-element .el-icon-img {
   width: 44px; height: 44px;
-  pointer-events: none;
+  pointer-events: none; object-fit: contain;
 }
 
 .canvas-element .card-name {
@@ -364,7 +364,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   to   { transform: translateX(0);    opacity: 1; }
 }
 
-.toast-icon svg { width: 48px; height: 48px; }
+.toast-icon svg, .toast-icon .el-icon-img { width: 48px; height: 48px; object-fit: contain; }
 
 .toast-label { font-size: .75rem; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
 .toast-name  { font-size: 1.1rem; font-weight: 700; color: var(--text); }
@@ -456,7 +456,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   display: flex; align-items: center; gap: 5px;
   font-weight: 700; min-width: 90px;
 }
-.recipe-result svg { width: 28px; height: 28px; flex-shrink: 0; }
+.recipe-result svg, .recipe-result .el-icon-img { width: 28px; height: 28px; flex-shrink: 0; object-fit: contain; }
 
 .recipe-eq { color: var(--text2); flex-shrink: 0; }
 
@@ -740,7 +740,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   display: flex; align-items: center; gap: 5px;
   font-weight: 600; flex: 1; min-width: 0;
 }
-.hint-result svg { width: 26px; height: 26px; flex-shrink: 0; }
+.hint-result svg, .hint-result .el-icon-img { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
 .hint-result span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .no-hints {

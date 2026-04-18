@@ -1,5 +1,13 @@
 'use strict';
 
+// ─── Icon helper ──────────────────────────────────────────────────────────────
+// SVG strings go straight into innerHTML; data URIs need an <img> wrapper.
+function iconHtml(icon) {
+  if (!icon) return '';
+  if (icon.startsWith('data:')) return `<img src="${icon}" class="el-icon-img" alt="">`;
+  return icon;
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 const state = {
   socket: null,
@@ -300,7 +308,7 @@ function addSidebarCard(def) {
   card.dataset.id = def.id;
   card.dataset.cat = def.category || '';
   card.innerHTML = `
-    ${def.icon || ''}
+    ${iconHtml(def.icon)}
     <span class="card-name">${def.name}</span>
   `;
 
@@ -340,7 +348,7 @@ function addCanvasItem(instance, animate) {
   el.className = 'canvas-element';
   el.dataset.instanceId = instance.instanceId;
   el.innerHTML = `
-    ${def.icon || ''}
+    ${iconHtml(def.icon)}
     <span class="card-name">${def.name}</span>
   `;
   setElPos(el, instance.x, instance.y);
@@ -376,7 +384,7 @@ let ghost = null;
 function createGhost(def) {
   const el = document.createElement('div');
   el.className = 'element-card ghost-drag';
-  el.innerHTML = `${def.icon || ''}<span class="card-name">${def.name}</span>`;
+  el.innerHTML = `${iconHtml(def.icon)}<span class="card-name">${def.name}</span>`;
   el.style.cssText = 'position:fixed;pointer-events:none;opacity:.75;z-index:9999;';
   document.body.appendChild(el);
   return el;
@@ -587,11 +595,11 @@ function addRecipeRow(elementId) {
   const inputsHtml = inputs.map((id, i) => {
     const d = state.allElements[id];
     return `${i > 0 ? '<span class="recipe-plus">+</span>' : ''}
-      <span class="recipe-input">${d?.icon || ''}<span>${d?.name || id}</span></span>`;
+      <span class="recipe-input">${iconHtml(d?.icon)}<span>${d?.name || id}</span></span>`;
   }).join('');
 
   row.innerHTML = `
-    <div class="recipe-result">${def.icon || ''}<span>${def.name}</span></div>
+    <div class="recipe-result">${iconHtml(def.icon)}<span>${def.name}</span></div>
     <span class="recipe-eq">=</span>
     <div class="recipe-inputs">${inputsHtml}</div>
   `;
@@ -640,7 +648,7 @@ function showModalError(msg) {
 // ─── Toast notification ───────────────────────────────────────────────────────
 let toastTimer = null;
 function showToast(def) {
-  toast.querySelector('.toast-icon').innerHTML = def.icon || '';
+  toast.querySelector('.toast-icon').innerHTML = iconHtml(def.icon);
   toast.querySelector('.toast-name').textContent = def.name;
   toast.classList.remove('hidden');
 
@@ -753,7 +761,7 @@ function renderHints() {
     row.innerHTML = `
       <div class="hint-inputs">${slotsHtml}</div>
       <span class="hint-eq">=</span>
-      <div class="hint-result">${def.icon || ''}<span>${def.name}</span></div>
+      <div class="hint-result">${iconHtml(def.icon)}<span>${def.name}</span></div>
     `;
     hintsList.appendChild(row);
   }
